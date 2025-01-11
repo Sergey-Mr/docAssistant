@@ -11,7 +11,14 @@
                 <div class="p-6 text-gray-900 dark:text-gray-100">
                     {{ __("You're logged in!") }}
                 </div>
+                <div class="p-6">
+                    <x-text-editor />
+                </div>
             </div>
         </div>
     </div>
+
+    @push('scripts')
+        <script src="{{ asset('js/components/text-editor.js') }}"></script>
+    @endpush
 </x-app-layout>
