@@ -6,6 +6,11 @@ export default class TextEditor {
     }
 
     initializeElements() {
+        if (!this.editor || !this.modal || !this.input) {
+            console.error('Required DOM elements not found.');
+            return;
+        }
+
         this.editor = document.getElementById('text-editor');
         this.modal = document.getElementById('edit-modal');
         this.input = document.getElementById('edit-text-input');
@@ -78,9 +83,10 @@ export default class TextEditor {
     calculatePosition(rect) {
         const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
         const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+        const MODAL_OFFSET = 10;
         
         return {
-            top: rect.bottom + scrollTop + 10,
+            top: rect.bottom + scrollTop + MODAL_OFFSET,
             left: rect.left + scrollLeft
         };
     }
@@ -178,5 +184,12 @@ export default class TextEditor {
         range.setEnd(this.selectedRange.endContainer, this.selectedRange.endOffset);
         range.deleteContents();
         range.insertNode(document.createTextNode(this.input.value));
+    }
+
+    destroy() {
+        this.editor.removeEventListener('mouseup', this.handleSelection);
+        this.editor.removeEventListener('keyup', this.handleKeyboardSelection);
+        document.removeEventListener('mousedown', this.handleOutsideClick);
+        document.removeEventListener('selectionchange', this.handleSelectionChange);
     }
 }
