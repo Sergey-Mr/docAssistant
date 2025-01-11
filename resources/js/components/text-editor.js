@@ -1,93 +1,124 @@
 export default class TextEditor {
     constructor() {
+        this.initializeElements();
+        this.bindMethods();
+        this.attachEventListeners();
+    }
+
+    initializeElements() {
         this.editor = document.getElementById('text-editor');
         this.modal = document.getElementById('edit-modal');
         this.input = document.getElementById('edit-text-input');
         this.selectedRange = null;
         this.isEditingModal = false;
-        this.init();
+    }
 
+    bindMethods() {
         this.closeModal = this.closeModal.bind(this);
         this.saveChanges = this.saveChanges.bind(this);
+        this.handleSelection = this.handleSelection.bind(this);
+        this.handleOutsideClick = this.handleOutsideClick.bind(this);
+        this.handleKeyboardSelection = this.handleKeyboardSelection.bind(this);
     }
 
-    init() {
+    attachEventListeners() {
         if (!this.editor) return;
-
-         // Helper function to handle selection
-        const handleSelection = () => {
-            const selection = window.getSelection();
-            if (selection.toString().length > 0) {
-                this.selectedRange = selection.getRangeAt(0);
-                this.input.value = selection.toString();
-                this.positionAndShowModal();
-            }
-        };
         
-        // Handle mouse selection
-        this.editor.addEventListener('mouseup', handleSelection);
-    
-        // Handle keyboard selection
-        this.editor.addEventListener('keyup', (e) => {
-            // Check if selection keys were pressed (Shift + Arrow keys)
-            if (e.shiftKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
-                handleSelection();
-            }
-        });
-        
-        // Handle text selection
-        this.editor.addEventListener('mouseup', () => {
-            const selection = window.getSelection();
-            if (selection.toString().length > 0) {
-                this.selectedRange = selection.getRangeAt(0);
-                this.input.value = selection.toString();
-                this.positionAndShowModal();
-            }
-        });
-
-        // Handle modal focus
-        this.input.addEventListener('focus', () => {
-            this.isEditingModal = true;
-        });
-
-        this.input.addEventListener('blur', () => {
-            this.isEditingModal = false;
-        });
-
-        // Handle clicks outside modal and editor
-        document.addEventListener('mousedown', (e) => {
-            if (!this.modal.contains(e.target) && 
-                !this.editor.contains(e.target) && 
-                !this.isEditingModal) {
-                this.closeModal();
-                window.getSelection().removeAllRanges();
-            }
-        });
-
-        // Handle selection change
-        document.addEventListener('selectionchange', () => {
-            const selection = window.getSelection();
-            if (selection.toString().length === 0 && 
-                !this.isEditingModal && 
-                !this.modal.classList.contains('hidden')) {
-                this.closeModal();
-            }
-        });
+        this.editor.addEventListener('mouseup', this.handleSelection);
+        this.editor.addEventListener('keyup', this.handleKeyboardSelection);
+        this.attachModalListeners();
+        this.attachDocumentListeners();
     }
 
-    positionAndShowModal() {
-        const range = this.selectedRange;
-        const rect = range.getBoundingClientRect();
+    attachModalListeners() {
+        this.input.addEventListener('focus', () => this.isEditingModal = true);
+        this.input.addEventListener('blur', () => this.isEditingModal = false);
+        this.modal.addEventListener('mousedown', e => e.stopPropagation());
+    }
+
+    attachDocumentListeners() {
+        document.addEventListener('mousedown', this.handleOutsideClick);
+        document.addEventListener('selectionchange', this.handleSelectionChange.bind(this));
+    }
+
+    handleSelection() {
+        const selection = window.getSelection();
+        if (this.isValidSelection(selection)) {
+            this.updateSelection(selection);
+        }
+    }
+
+    handleKeyboardSelection(e) {
+        if (this.isSelectionKey(e)) {
+            this.handleSelection();
+        }
+    }
+
+    isSelectionKey(e) {
+        return e.shiftKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key);
+    }
+
+    isValidSelection(selection) {
+        return selection && selection.toString().length > 0;
+    }
+
+    updateSelection(selection) {
+        this.selectedRange = selection.getRangeAt(0);
+        this.input.value = selection.toString();
+        this.updateModalPosition();
+    }
+
+    updateModalPosition() {
+        const rect = this.selectedRange.getBoundingClientRect();
+        const position = this.calculatePosition(rect);
+        this.setModalPosition(position);
+        this.showModal();
+    }
+
+    calculatePosition(rect) {
         const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
         const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-
-        // Position modal near selection
-        this.modal.style.position = 'absolute';
-        this.modal.style.top = `${rect.bottom + scrollTop + 10}px`;
-        this.modal.style.left = `${rect.left + scrollLeft}px`;
-        this.modal.style.transform = 'none';
         
-        this.showModal();
+        return {
+            top: rect.bottom + scrollTop + 10,
+            left: rect.left + scrollLeft
+        };
+    }
+
+    setModalPosition({ top, left }) {
+        this.modal.style.position = 'absolute';
+        this.modal.style.top = `${top}px`;
+        this.modal.style.left = `${left}px`;
+    }
+
+    handleOutsideClick(e) {
+        if (this.shouldCloseModal(e)) {
+            this.closeModalAndClearSelection();
+        }
+    }
+
+    shouldCloseModal(e) {
+        return !this.modal.contains(e.target) && 
+               !this.editor.contains(e.target) && 
+               !this.isEditingModal;
+    }
+
+    handleSelectionChange() {
+        const selection = window.getSelection();
+        if (this.shouldCloseOnSelectionChange(selection)) {
+            this.closeModal();
+        }
+    }
+
+    shouldCloseOnSelectionChange(selection) {
+        return selection.toString().length === 0 && 
+               !this.isEditingModal && 
+               !this.modal.classList.contains('hidden');
+    }
+
+    closeModalAndClearSelection() {
+        this.closeModal();
+        window.getSelection().removeAllRanges();
     }
 
     showModal() {
@@ -101,38 +132,37 @@ export default class TextEditor {
 
     async saveChanges() {
         if (!this.selectedRange) return;
-    
+        
         try {
-            const response = await fetch('/text/update', {  // Updated URL
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                },
-                body: JSON.stringify({
-                    start_index: this.getTextOffset(this.selectedRange.startContainer, this.selectedRange.startOffset),
-                    end_index: this.getTextOffset(this.selectedRange.endContainer, this.selectedRange.endOffset),
-                    original_text: this.selectedRange.toString(),
-                    updated_text: this.input.value,
-                    full_text: this.editor.textContent
-                })
-            });
-    
+            const response = await this.sendUpdateRequest();
             if (response.ok) {
                 this.updateContent();
-            } else {
-                console.error('Update failed:', await response.text());
+                this.closeModal();
             }
         } catch (error) {
-            console.error('Error:', error);
+            console.error('Failed to save changes:', error);
         }
     }
 
-    updateContent() {
-        const newText = document.createTextNode(this.input.value);
-        this.selectedRange.deleteContents();
-        this.selectedRange.insertNode(newText);
-        this.closeModal();
+    async sendUpdateRequest() {
+        return fetch('/text/update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+            },
+            body: JSON.stringify(this.getUpdatePayload())
+        });
+    }
+
+    getUpdatePayload() {
+        return {
+            start_index: this.getTextOffset(this.selectedRange.startContainer, this.selectedRange.startOffset),
+            end_index: this.getTextOffset(this.selectedRange.endContainer, this.selectedRange.endOffset),
+            original_text: this.selectedRange.toString(),
+            updated_text: this.input.value,
+            full_text: this.editor.textContent
+        };
     }
 
     getTextOffset(node, offset) {
@@ -140,5 +170,13 @@ export default class TextEditor {
         range.selectNodeContents(this.editor);
         range.setEnd(node, offset);
         return range.toString().length;
+    }
+
+    updateContent() {
+        const range = document.createRange();
+        range.setStart(this.selectedRange.startContainer, this.selectedRange.startOffset);
+        range.setEnd(this.selectedRange.endContainer, this.selectedRange.endOffset);
+        range.deleteContents();
+        range.insertNode(document.createTextNode(this.input.value));
     }
 }
