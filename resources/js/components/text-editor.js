@@ -171,7 +171,8 @@ export default class TextEditor {
             end_index: this.getTextOffset(this.selectedRange.endContainer, this.selectedRange.endOffset),
             original_text: this.selectedRange.toString(),
             updated_text: this.input.value,
-            full_text: this.editor.textContent
+            full_text: this.editor.textContent,
+            tab_id: this.editor.dataset.tabId
         };
     }
 
