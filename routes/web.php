@@ -21,14 +21,16 @@ Route::middleware(['auth', 'ensure.default.tab'])->group(function () {
     
     Route::post('/tabs', [TabController::class, 'store'])->name('tabs.store');
 });
+
+
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-
+    
     Route::post('/text/update', [TextController::class, 'update'])->name('text.update');
+    Route::delete('/tabs/{tab}', [TabController::class, 'destroy'])->name('tabs.destroy');
 
-    Route::post('/tabs', [TabController::class, 'store'])->name('tabs.store');
 });
 
 require __DIR__.'/auth.php';

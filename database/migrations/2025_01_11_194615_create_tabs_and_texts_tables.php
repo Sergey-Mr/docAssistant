@@ -17,19 +17,19 @@ return new class extends Migration
 
         Schema::create('user_texts', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained('users');
-            $table->foreignId('tab_id')->constrained('tabs');
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('tab_id')->constrained()->onDelete('cascade');
             $table->text('text_content');
             $table->timestamps();
             $table->foreignId('previous_version_id')
                 ->nullable()
                 ->constrained('user_texts')
-                ->onDelete('set null');
+                ->nullOnDelete();
         });
-
+        
         Schema::create('text_changes', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_text_id')->constrained('user_texts');
+            $table->foreignId('user_text_id')->constrained()->onDelete('cascade');
             $table->integer('start_index');
             $table->integer('end_index');
             $table->text('original_text');

@@ -16,5 +16,7 @@
         </div>
     </div>
 
-    @vite(['resources/js/components/dashboard.js', 'resources/js/components/text-editor.js'])
+    @vite(['resources/js/components/dashboard.js', 
+           'resources/js/components/text-editor.js',
+           'resources/js/components/tab-manager.js'])
 </x-app-layout>

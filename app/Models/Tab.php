@@ -21,5 +21,18 @@ class Tab extends Model
     public function latestText()
     {
         return $this->texts()->latest()->first();
+    
+    }
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::deleting(function($tab) {
+            // Delete related texts and changes
+            $tab->texts()->each(function($text) {
+                $text->changes()->delete();
+                $text->delete();
+            });
+        });
     }
 }
