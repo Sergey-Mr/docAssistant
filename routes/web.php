@@ -28,6 +28,10 @@ Route::post('/api/annotations/process', [TextProcessingController::class, 'proce
     ->middleware('auth');
 
 Route::post('/text/update', [TextController::class, 'update'])->name('api.text.update');
+Route::get('/api/text/history/{tabId}', [TextController::class, 'history'])
+    ->name('text.history')
+    ->middleware('auth');
+
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

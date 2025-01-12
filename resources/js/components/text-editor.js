@@ -15,7 +15,12 @@ class TextEditor {
         annotationText: 'font-bold text-gray-700 dark:text-gray-300',
         warning: 'fixed top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg shadow-md z-50 transition-opacity duration-300',
         annotationContent: 'text-gray-600 dark:text-gray-400',
-        processButton: 'w-full mt-4 py-3 bg-blue-500 dark:bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 font-medium'
+        processButton: 'w-full mt-4 py-3 bg-blue-500 dark:bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 font-medium',
+        history: 'mt-8 border-t border-gray-200 dark:border-gray-700 pt-6',
+        historyItem: 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm mb-4 border-l-4 border-blue-500',
+        historyTitle: 'text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4',
+        historyContent: 'text-gray-600 dark:text-gray-400',
+        historyTimestamp: 'text-sm text-gray-500 dark:text-gray-400 mt-2'
     };
 
     constructor() {
@@ -476,6 +481,7 @@ class TextEditor {
     
             this.showWarning('Revision applied successfully');
             this.disableAppliedButton(revision);
+            this.loadChangeHistory();
     
         } catch (error) {
             console.error('Error applying revision:', error);
@@ -575,6 +581,86 @@ class TextEditor {
             Processing...
         `;
     }
+
+    displayHistory() {
+        const historySection = document.createElement('div');
+        historySection.className = TextEditor.CSS.history;
+        
+        const title = document.createElement('h3');
+        title.className = TextEditor.CSS.historyTitle;
+        title.textContent = 'Change History';
+        historySection.appendChild(title);
+    
+        this.annotationsList.appendChild(historySection);
+        
+        this.loadChangeHistory();
+    }
+
+    async loadChangeHistory() {
+        try {
+            const tabId = this.editor?.dataset.tabId;
+            if (!tabId) return;
+    
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+            const response = await fetch(`/api/text/history/${tabId}`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken
+                }
+            });
+    
+            if (!response.ok) throw new Error('Failed to fetch history');
+            const changes = await response.json();
+            this.renderHistory(changes);
+        } catch (error) {
+            console.error('Failed to load history:', error);
+        }
+    }
+
+    renderHistory(changes) {
+        const existingHistory = this.annotationsList.querySelector('.history-section');
+        if (existingHistory) existingHistory.remove();
+    
+        const historySection = document.createElement('div');
+        historySection.className = TextEditor.CSS.history;
+        
+        const title = document.createElement('h3');
+        title.className = TextEditor.CSS.historyTitle;
+        title.textContent = 'Change History';
+        historySection.appendChild(title);
+    
+        if (changes.length === 0) {
+            const emptyState = document.createElement('p');
+            emptyState.className = TextEditor.CSS.historyContent;
+            emptyState.textContent = 'No changes recorded yet';
+            historySection.appendChild(emptyState);
+        } else {
+            changes.forEach(change => {
+                const changeItem = document.createElement('div');
+                changeItem.className = TextEditor.CSS.historyItem;
+                changeItem.innerHTML = `
+                    <div class="flex items-center mb-4">
+                        <span class="${TextEditor.CSS.historyContent}">"${change.original_text}"</span>
+                        <svg class="mx-4 w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+                        </svg>
+                        <span class="${TextEditor.CSS.historyContent}">"${change.updated_text}"</span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="font-bold text-gray-700 dark:text-gray-300">Explanation: </span>
+                        <span class="${TextEditor.CSS.historyContent}">${change.explanation || 'No explanation provided'}</span>
+                    </div>
+                    <div class="${TextEditor.CSS.historyTimestamp}">
+                        ${new Date(change.created_at).toLocaleString()}
+                    </div>
+                `;
+                historySection.appendChild(changeItem);
+            });
+        }
+    
+        this.annotationsList.appendChild(historySection);
+    }
+    
 }
 
 export default TextEditor;

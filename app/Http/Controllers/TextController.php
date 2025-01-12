@@ -71,6 +71,23 @@ class TextController extends Controller
         }
     }
 
+    public function history($tabId)
+    {
+        try {
+            $changes = TextChange::join('user_texts', 'text_changes.user_text_id', '=', 'user_texts.id')
+                ->where('user_texts.tab_id', $tabId)
+                ->orderBy('text_changes.created_at', 'desc')
+                ->select('text_changes.*')
+                ->get();
+        
+            return response()->json($changes);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to fetch history'
+            ], 500);
+        }
+    }
+
     private function validateUpdateRequest(Request $request): array
     {
         return $request->validate([
