@@ -16,6 +16,7 @@ export default class TextEditor {
         this.bindMethods();
         this.attachEventListeners();
         this.loadAnnotationsForCurrentTab();
+        this.isProcessing = false;
     }
 
     initializeElements() {
@@ -291,7 +292,12 @@ export default class TextEditor {
     }
     
     async processAnnotations() {
+        if (this.isProcessing) return;
+    
         try {
+            this.isProcessing = true;
+            this.updateProcessButton();
+    
             const data = {
                 fullContext: this.editor.textContent,
                 annotations: Array.from(this.annotations.values()).map(ann => ({
@@ -325,7 +331,37 @@ export default class TextEditor {
         } catch (error) {
             console.error('Error:', error);
             this.showWarning(error.message || 'Failed to process annotations');
+        } finally {
+            this.isProcessing = false;
+            this.updateProcessButton();
         }
+    }
+    
+    updateProcessButton() {
+        const button = this.annotationsList.querySelector('.process-button');
+        if (!button) return;
+        
+        button.disabled = this.isProcessing;
+        button.innerHTML = this.isProcessing ? this.getLoadingButtonContent() : this.getProcessButtonContent();
+    }
+    
+    getProcessButtonContent() {
+        return `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            Start Processing
+        `;
+    }
+    
+    getLoadingButtonContent() {
+        return `
+            <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Processing...
+        `;
     }
 
     displayProcessingResults(revisions) {
