@@ -6,11 +6,6 @@ export default class TextEditor {
     }
 
     initializeElements() {
-        if (!this.editor || !this.modal || !this.input) {
-            console.error('Required DOM elements not found.');
-            return;
-        }
-
         this.editor = document.getElementById('text-editor');
         this.modal = document.getElementById('edit-modal');
         this.input = document.getElementById('edit-text-input');
@@ -141,24 +136,33 @@ export default class TextEditor {
         
         try {
             const response = await this.sendUpdateRequest();
+            const data = await response.json();
             if (response.ok) {
                 this.updateContent();
                 this.closeModal();
+                window.showNotification('Changes saved successfully', 'success');
+            } else {
+                window.showNotification(data.error || 'Failed to save changes', 'error');
             }
         } catch (error) {
             console.error('Failed to save changes:', error);
+            window.showNotification('Failed to save changes', 'error');
         }
     }
 
     async sendUpdateRequest() {
-        return fetch('/text/update', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-            },
-            body: JSON.stringify(this.getUpdatePayload())
-        });
+        try {
+            return await fetch('/text/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify(this.getUpdatePayload())
+            });
+        } catch (error) {
+            throw new Error('Network error occurred');
+        }
     }
 
     getUpdatePayload() {
