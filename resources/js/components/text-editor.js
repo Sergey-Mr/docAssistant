@@ -382,8 +382,10 @@ class TextEditor {
     displayProcessingResults(revisions) {
         const existingResults = this.annotationsList.querySelector('.results-container');
         if (existingResults) existingResults.remove();
+        
         const resultsContainer = document.createElement('div');
         resultsContainer.className = 'results-container mt-6 space-y-4';
+        
         revisions.forEach((revision, index) => {
             const resultElement = document.createElement('div');
             resultElement.className = 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 border-[#10B981]';
@@ -396,9 +398,9 @@ class TextEditor {
                     <span class="font-bold text-gray-700 dark:text-gray-300">Revised: </span>
                     <span class="text-green-600 dark:text-green-400">"${revision.revised}"</span>
                 </div>
-                <div>
+                <div class="mb-2">
                     <span class="font-bold text-gray-700 dark:text-gray-300">Explanation: </span>
-                    <span class="text-gray-600 dark:text-gray-400">${revision.explanation}</span>
+                    <span class="text-gray-600 dark:text-gray-400 gpt-explanation">${revision.explanation}</span>
                 </div>
                 <button 
                     onclick="window.textEditor.applyRevision(${index})"
@@ -419,27 +421,41 @@ class TextEditor {
             const revision = revisions[index];
             if (!revision) throw new Error('Revision not found');
     
-            // Extract texts and explanation
+            // Extract texts and GPT explanation
             const originalElement = revision.querySelector('.text-gray-600');
             const revisedElement = revision.querySelector('.text-green-600');
-            const explanationElement = revision.querySelector('[class*="text-gray-400"]:last-child');
+            const gptExplanationElement = revision.querySelector('.gpt-explanation');
     
-            if (!originalElement || !revisedElement) {
-                throw new Error('Could not find original or revised text elements');
+            if (!originalElement || !revisedElement || !gptExplanationElement) {
+                throw new Error('Could not find required elements');
             }
     
-            const originalText = originalElement.textContent.replace(/['"]/g, '').trim();
-            const revisedText = revisedElement.textContent.replace(/['"]/g, '').trim();
-            const explanation = explanationElement ? explanationElement.textContent.trim() : '';
+            const originalText = originalElement.textContent.replace(/["""]/g, '').trim();
+            const revisedText = revisedElement.textContent.replace(/["""]/g, '').trim();
+            const gptExplanation = gptExplanationElement.textContent.trim();
     
-            // Update editor content directly
-            this.editor.innerHTML = revisedText;
+            // Update editor content
+            const editorContent = this.editor.innerHTML;
+            const escapedOriginalText = originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(escapedOriginalText, 'g');
+            
+            if (regex.test(editorContent)) {
+                const newContent = editorContent.replace(regex, revisedText);
+                this.editor.innerHTML = newContent;
+            } else {
+                const textContent = this.editor.textContent;
+                if (textContent.includes(originalText)) {
+                    const newContent = textContent.replace(originalText, revisedText);
+                    this.editor.textContent = newContent;
+                } else {
+                    throw new Error(`Original text not found: "${originalText}"`);
+                }
+            }
     
-            // Save to database with explanation
+            // Save to database with GPT's explanation
             const cleanedContent = this.cleanTextContent(this.editor.innerHTML);
-            await this.saveTextToDatabase(cleanedContent, explanation);
+            await this.saveTextToDatabase(cleanedContent, gptExplanation);
     
-            // Clear UI and refresh
             this.clearUIAfterRevision();
             this.showWarning('Revision applied successfully');
             this.disableAppliedButton(revision);
@@ -449,6 +465,20 @@ class TextEditor {
             console.error('Error applying revision:', error);
             this.showWarning('Failed to apply revision: ' + error.message);
         }
+    }
+
+    cleanTextContent(html) {
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        
+        // Remove all annotation spans but keep their text content
+        const spans = temp.querySelectorAll('[data-annotation-id]');
+        spans.forEach(span => {
+            const text = span.textContent;
+            span.replaceWith(text);
+        });
+        
+        return temp.textContent.trim();
     }
 
     clearUIAfterRevision() {
@@ -475,20 +505,6 @@ class TextEditor {
         this.saveAnnotations();
     }
 
-    cleanTextContent(html) {
-        // Create a temporary div to handle HTML content
-        const temp = document.createElement('div');
-        temp.innerHTML = html;
-        
-        // Remove all annotation spans but keep their text content
-        const spans = temp.querySelectorAll('[data-annotation-id]');
-        spans.forEach(span => {
-            const text = span.textContent;
-            span.replaceWith(text);
-        });
-        
-        return temp.textContent;
-    }
     
     async saveTextToDatabase(content, explanation = '') {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
@@ -614,17 +630,6 @@ class TextEditor {
         changes.forEach(change => {
             const changeItem = document.createElement('div');
             changeItem.className = TextEditor.CSS.historyItem;
-            
-            // Format timestamp
-            const timestamp = new Date(change.created_at).toLocaleString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false
-            });
-    
             changeItem.innerHTML = `
                 <div class="flex items-center mb-4">
                     <span class="${TextEditor.CSS.historyContent}">"${change.original_text}"</span>
@@ -636,12 +641,6 @@ class TextEditor {
                 <div class="mb-2">
                     <span class="font-bold text-gray-700 dark:text-gray-300">Explanation: </span>
                     <span class="${TextEditor.CSS.historyContent}">${change.explanation || 'No explanation provided'}</span>
-                </div>
-                <div class="text-sm text-gray-500 dark:text-gray-400 mt-2 flex items-center">
-                    <span>${timestamp}</span>
-                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
                 </div>
             `;
             this.historyContainer.appendChild(changeItem);
