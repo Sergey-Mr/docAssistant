@@ -1,5 +1,6 @@
 export default class TextEditor {
     constructor() {
+        this.annotations = new Map();
         this.initializeElements();
         this.bindMethods();
         this.attachEventListeners();
@@ -9,6 +10,8 @@ export default class TextEditor {
         this.editor = document.getElementById('text-editor');
         this.modal = document.getElementById('edit-modal');
         this.input = document.getElementById('edit-text-input');
+        this.selectedTextDisplay = document.getElementById('selected-text');
+        this.annotationsList = document.getElementById('annotations-list');
         this.selectedRange = null;
         this.isEditingModal = false;
     }
@@ -64,8 +67,97 @@ export default class TextEditor {
 
     updateSelection(selection) {
         this.selectedRange = selection.getRangeAt(0);
-        this.input.value = selection.toString();
+        const selectedText = selection.toString();
+        this.selectedTextDisplay.textContent = `"${selectedText}"`;
+        this.input.value = '';
         this.updateModalPosition();
+    }
+
+    async addAnnotation() {
+        if (!this.selectedRange || !this.input.value.trim()) return;
+
+        const annotationId = Date.now();
+        const annotation = {
+            id: annotationId,
+            text: this.selectedRange.toString(),
+            comment: this.input.value.trim(),
+            range: this.selectedRange.cloneRange()
+        };
+
+        // Add to annotations map
+        this.annotations.set(annotationId, annotation);
+        
+        // Highlight the text
+        this.highlightRange(this.selectedRange, annotationId);
+        
+        // Add to annotations list
+        this.addAnnotationToList(annotation);
+        
+        // Close modal
+        this.closeModal();
+        
+        // Keep the selection
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(annotation.range);
+    }
+
+    highlightRange(range, annotationId) {
+        const span = document.createElement('span');
+        span.className = 'bg-yellow-200 dark:bg-yellow-800';
+        span.dataset.annotationId = annotationId;
+        range.surroundContents(span);
+    }
+
+    addAnnotationToList(annotation) {
+        const annotationElement = document.createElement('div');
+        annotationElement.className = 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-start';
+        annotationElement.innerHTML = `
+            <div class="flex-grow">
+                <div class="mb-3">
+                    <span class="font-bold text-gray-700 dark:text-gray-300">Selected text: </span>
+                    <span class="italic text-gray-600 dark:text-gray-400">"${annotation.text}"</span>
+                </div>
+                <div>
+                    <span class="font-bold text-gray-700 dark:text-gray-300">Comment: </span>
+                    <span class="text-gray-600 dark:text-gray-400">${annotation.comment}</span>
+                </div>
+            </div>
+            <button 
+                onclick="window.textEditor.removeAnnotation(${annotation.id})"
+                class="ml-4 p-1 text-gray-400 hover:text-red-500 transition-colors"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        `;
+        this.annotationsList.appendChild(annotationElement);
+    }
+
+    removeAnnotation(annotationId) {
+        const annotation = this.annotations.get(annotationId);
+        if (!annotation) return;
+
+        // Remove highlight
+        const highlightSpan = this.editor.querySelector(`[data-annotation-id="${annotationId}"]`);
+        if (highlightSpan) {
+            const parent = highlightSpan.parentNode;
+            while (highlightSpan.firstChild) {
+                parent.insertBefore(highlightSpan.firstChild, highlightSpan);
+            }
+            highlightSpan.remove();
+        }
+
+        // Remove from list
+        const annotationElement = Array.from(this.annotationsList.children)
+            .find(el => el.querySelector(`button[onclick*="${annotationId}"]`));
+        if (annotationElement) {
+            annotationElement.remove();
+        }
+
+        // Remove from map
+        this.annotations.delete(annotationId);
     }
 
     updateModalPosition() {
