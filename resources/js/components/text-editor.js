@@ -166,12 +166,16 @@ export default class TextEditor {
     }
 
     getUpdatePayload() {
+        const newText = this.editor.textContent.substring(0, this.getTextOffset(this.selectedRange.startContainer, this.selectedRange.startOffset)) +
+                   this.input.value +
+                   this.editor.textContent.substring(this.getTextOffset(this.selectedRange.endContainer, this.selectedRange.endOffset));
+
         return {
             start_index: this.getTextOffset(this.selectedRange.startContainer, this.selectedRange.startOffset),
             end_index: this.getTextOffset(this.selectedRange.endContainer, this.selectedRange.endOffset),
             original_text: this.selectedRange.toString(),
             updated_text: this.input.value,
-            full_text: this.editor.textContent,
+            full_text: newText,
             tab_id: this.editor.dataset.tabId
         };
     }
