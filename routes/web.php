@@ -26,7 +26,8 @@ Route::middleware(['auth', 'ensure.default.tab'])->group(function () {
 Route::post('/api/annotations/process', [TextProcessingController::class, 'process'])
     ->name('annotations.process')
     ->middleware('auth');
-    
+
+Route::post('/text/update', [TextController::class, 'update'])->name('api.text.update');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

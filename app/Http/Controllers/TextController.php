@@ -5,7 +5,10 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Log;
-use App\Services\TextService;  // Add this line
+use App\Services\TextService;  
+use App\Models\Tab;
+use App\Models\TextChange;
+use App\Models\UserText;
 
 class TextController extends Controller
 {
@@ -18,18 +21,53 @@ class TextController extends Controller
 
     public function update(Request $request)
     {
+        $request->validate([
+            'tabId' => 'required|exists:tabs,id',
+            'content' => 'required|string'
+        ]);
+
         try {
-            $validated = $this->validateUpdateRequest($request);
-            $textData = $this->textService->createTextVersion($validated);
-            
+            // Get current text record or create new one
+            $text = UserText::where('tab_id', $request->tabId)
+                       ->latest()
+                       ->first();
+
+            if ($text) {
+                // Create new version with previous version reference
+                $newText = UserText::create([
+                    'user_id' => auth()->id(),
+                    'tab_id' => $request->tabId,
+                    'text_content' => $request->content,
+                    'previous_version_id' => $text->id
+                ]);
+            } else {
+                // First version
+                $newText = UserText::create([
+                    'user_id' => auth()->id(),
+                    'tab_id' => $request->tabId,
+                    'text_content' => $request->content
+                ]);
+            }
+
+            // Record the change
+            TextChange::create([
+                'user_text_id' => $newText->id,
+                'start_index' => $request->start_index ?? 0,
+                'end_index' => $request->end_index ?? strlen($request->content),
+                'original_text' => $text ? $text->text_content : '',
+                'updated_text' => $request->content
+            ]);
+
             return response()->json([
                 'success' => true,
-                'text' => $textData['text'],
-                'change' => $textData['change']
+                'message' => 'Text updated successfully'
             ]);
         } catch (\Exception $e) {
-            Log::error('Text update error: ' . $e->getMessage());
-            return response()->json(['error' => $e->getMessage()], 500);
+            Log::error('Text update failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update text: ' . $e->getMessage()
+            ], 500);
         }
     }
 

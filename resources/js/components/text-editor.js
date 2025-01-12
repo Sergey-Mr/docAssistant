@@ -10,12 +10,12 @@ class TextEditor {
     static CSS = {
         editor: 'w-full min-h-[300px] p-4 mb-4 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 resize overflow-auto',
         modal: 'hidden absolute z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4',
-        annotation: 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-start',
+        annotation: 'p-4 bg-white dark:bg-gray-700 rounded-lg shadow-sm border-l-4 border-blue-500 dark:border-blue-500 flex justify-between items-start',
         highlight: 'bg-blue-200 dark:bg-blue-700 px-1 rounded',
         annotationText: 'font-bold text-gray-700 dark:text-gray-300',
         warning: 'fixed top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg shadow-md z-50 transition-opacity duration-300',
         annotationContent: 'text-gray-600 dark:text-gray-400',
-        processButton: 'w-full mt-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 font-medium'
+        processButton: 'w-full mt-4 py-3 bg-blue-500 dark:bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 font-medium'
     };
 
     constructor() {
@@ -134,7 +134,8 @@ class TextEditor {
             id: annotationId,
             text: this.selectedRange.toString(),
             comment: this.input.value.trim(),
-            range: this.selectedRange.cloneRange()
+            range: this.selectedRange.cloneRange(),
+            source: 'user'
         };
         this.annotations.set(annotationId, annotation);
         this.highlightRange(this.selectedRange, annotationId);
@@ -160,9 +161,20 @@ class TextEditor {
         this.annotationsList.appendChild(processButton);
     }
 
+    setAnnotationBorderColor(annotationId, source) {
+        const annotationElement = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
+        if (annotationElement) {
+            console.log('Source:', source); 
+            const color = source === 'user' ? '#10B981' : '#3B82F6'; // green-500 : blue-500
+            annotationElement.style.borderLeftColor = color; 
+            annotationElement.style.borderLeftWidth = '4px'; 
+        }
+    }
+
     addAnnotationToList(annotation) {
         const annotationElement = document.createElement('div');
         annotationElement.className = TextEditor.CSS.annotation;
+        annotationElement.dataset.annotationId = annotation.id;
         annotationElement.innerHTML = `
             <div class="flex-grow">
                 <div class="mb-3">
@@ -184,6 +196,7 @@ class TextEditor {
             </button>
         `;
         this.annotationsList.appendChild(annotationElement);
+        this.setAnnotationBorderColor(annotation.id, annotation.source);
         this.renderProcessButton();
     }
 
@@ -363,7 +376,7 @@ class TextEditor {
         resultsContainer.className = 'results-container mt-6 space-y-4';
         revisions.forEach((revision, index) => {
             const resultElement = document.createElement('div');
-            resultElement.className = 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 border-green-500';
+            resultElement.className = 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 border-[#10B981]';
             resultElement.innerHTML = `
                 <div class="mb-2">
                     <span class="font-bold text-gray-700 dark:text-gray-300">Original: </span>
@@ -389,28 +402,87 @@ class TextEditor {
         this.annotationsList.appendChild(resultsContainer);
     }
 
-    applyRevision(index) {
+    async applyRevision(index) {
         try {
+            // Get revision details
             const results = this.annotationsList.querySelector('.results-container');
             const revisions = results.querySelectorAll('.border-l-4');
             const revision = revisions[index];
             if (!revision) throw new Error('Revision not found');
+    
+            // Extract original and revised text
             const originalText = revision.querySelector('.text-gray-600').textContent.replace(/['"]/g, '');
             const revisedText = revision.querySelector('.text-green-600').textContent.replace(/['"]/g, '');
+    
+            // Update text in editor
             const content = this.editor.innerHTML;
             const updatedContent = content.replace(originalText, revisedText);
             this.editor.innerHTML = updatedContent;
+    
+            // Update database
+            await this.saveTextToDatabase(updatedContent);
+    
+            // Update annotation if exists
             const annotation = Array.from(this.annotations.values()).find(ann => ann.text === originalText);
             if (annotation) {
                 annotation.text = revisedText;
                 this.saveAnnotations();
             }
+    
+            // Update UI
             this.showWarning('Revision applied successfully');
             this.disableAppliedButton(revision);
+    
         } catch (error) {
             console.error('Error applying revision:', error);
             this.showWarning('Failed to apply revision');
         }
+    }
+
+    cleanTextContent(html) {
+        // Create a temporary div to handle HTML content
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        
+        // Remove all annotation spans but keep their text content
+        const spans = temp.querySelectorAll('[data-annotation-id]');
+        spans.forEach(span => {
+            const text = span.textContent;
+            span.replaceWith(text);
+        });
+        
+        return temp.textContent;
+    }
+    
+    async saveTextToDatabase(content) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        if (!csrfToken) throw new Error('CSRF token not found');
+    
+        const tabId = this.editor?.dataset.tabId;
+        if (!tabId) throw new Error('Tab ID not found');
+    
+        // Clean the content before saving
+        const cleanedContent = this.cleanTextContent(content);
+    
+        const response = await fetch('/text/update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken
+            },
+            body: JSON.stringify({
+                tabId,
+                content: cleanedContent
+            })
+        });
+    
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.message || 'Failed to save text');
+        }
+    
+        return response.json();
     }
 
     disableAppliedButton(revision) {
