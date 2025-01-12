@@ -20,7 +20,8 @@ class TextEditor {
         historyItem: 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm mb-4 border-l-4 border-blue-500',
         historyTitle: 'text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4',
         historyContent: 'text-gray-600 dark:text-gray-400',
-        historyTimestamp: 'text-sm text-gray-500 dark:text-gray-400 mt-2'
+        historyTimestamp: 'text-sm text-gray-500 dark:text-gray-400 mt-2',
+        historyContainer: 'mt-8 pt-6 border-t border-gray-200 dark:border-gray-700'
     };
 
     constructor() {
@@ -30,6 +31,7 @@ class TextEditor {
         this.bindMethods();
         this.attachEventListeners();
         this.loadAnnotationsForCurrentTab();
+        this.loadChangeHistory(); // Add this line
     }
 
     initializeElements() {
@@ -38,6 +40,9 @@ class TextEditor {
         this.input = document.getElementById('edit-text-input');
         this.selectedTextDisplay = document.getElementById('selected-text');
         this.annotationsList = document.getElementById('annotations-list');
+        this.historyContainer = document.createElement('div');
+        this.historyContainer.className = TextEditor.CSS.historyContainer;
+        this.annotationsList.parentNode.insertBefore(this.historyContainer, this.annotationsList.nextSibling);
         this.selectedRange = null;
         this.isEditingModal = false;
     }
@@ -414,33 +419,29 @@ class TextEditor {
             const revision = revisions[index];
             if (!revision) throw new Error('Revision not found');
     
-            // Extract and normalize texts, removing quotes and normalizing whitespace
-            const originalText = revision.querySelector('.text-gray-600').textContent
-                .replace(/['"]/g, '')
-                .replace(/\s+/g, ' ')
-                .trim();
-            const revisedText = revision.querySelector('.text-green-600').textContent
-                .replace(/['"]/g, '')
-                .replace(/\s+/g, ' ')
-                .trim();
-            
-            console.log('Searching for text:', originalText);
-            console.log('Will replace with:', revisedText);
+            // Extract texts with proper error handling
+            const originalElement = revision.querySelector('.text-gray-600');
+            const revisedElement = revision.querySelector('.text-green-600');
+            const explanationElement = revision.querySelector('[class*="text-gray-400"]:last-child');
     
-            // Get current editor content
+            if (!originalElement || !revisedElement) {
+                throw new Error('Could not find original or revised text elements');
+            }
+    
+            const originalText = originalElement.textContent.replace(/['"]/g, '').trim();
+            const revisedText = revisedElement.textContent.replace(/['"]/g, '').trim();
+            const explanation = explanationElement ? explanationElement.textContent.trim() : '';
+    
+            // Update editor content
             const editorContent = this.editor.innerText;
-            console.log('Editor content:', editorContent);
-    
             let found = false;
     
-            // First try: Direct replacement in editor's text content
             if (editorContent.includes(originalText)) {
                 const newContent = editorContent.replace(originalText, revisedText);
                 this.editor.innerText = newContent;
                 found = true;
             }
     
-            // Second try: Search in text nodes if direct replacement failed
             if (!found) {
                 const walker = document.createTreeWalker(
                     this.editor,
@@ -452,8 +453,6 @@ class TextEditor {
                 let node;
                 while ((node = walker.nextNode()) && !found) {
                     const nodeText = node.textContent.replace(/\s+/g, ' ').trim();
-                    console.log('Checking node:', nodeText);
-    
                     if (nodeText.includes(originalText)) {
                         node.textContent = node.textContent.replace(originalText, revisedText);
                         found = true;
@@ -463,22 +462,14 @@ class TextEditor {
             }
     
             if (!found) {
-                throw new Error(`Original text not found. Searching for: "${originalText}"`);
+                throw new Error(`Original text not found: "${originalText}"`);
             }
     
-            // Clean and update content
+            // Save to database with explanation
             const cleanedContent = this.cleanTextContent(this.editor.innerHTML);
-            await this.saveTextToDatabase(cleanedContent);
-    
-            // Update annotation if exists
-            const annotation = Array.from(this.annotations.values())
-                .find(ann => ann.text === originalText);
-            
-            if (annotation) {
-                annotation.text = revisedText;
-                this.saveAnnotations();
-            }
-    
+            await this.saveTextToDatabase(cleanedContent, explanation);
+
+            this.clearUIAfterRevision();
             this.showWarning('Revision applied successfully');
             this.disableAppliedButton(revision);
             this.loadChangeHistory();
@@ -487,6 +478,30 @@ class TextEditor {
             console.error('Error applying revision:', error);
             this.showWarning('Failed to apply revision: ' + error.message);
         }
+    }
+
+    clearUIAfterRevision() {
+        // Clear revision results
+        const resultsContainer = this.annotationsList.querySelector('.results-container');
+        if (resultsContainer) {
+            resultsContainer.remove();
+        }
+    
+        // Clear annotations list content
+        this.annotationsList.innerHTML = '';
+    
+        // Clear annotations
+        this.clearAnnotations();
+    
+        // Clear process button
+        const processButton = this.annotationsList.querySelector('.process-button');
+        if (processButton) {
+            processButton.remove();
+        }
+    
+        // Reset annotations state
+        this.annotations.clear();
+        this.saveAnnotations();
     }
 
     cleanTextContent(html) {
@@ -504,16 +519,13 @@ class TextEditor {
         return temp.textContent;
     }
     
-    async saveTextToDatabase(content) {
+    async saveTextToDatabase(content, explanation = '') {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
         if (!csrfToken) throw new Error('CSRF token not found');
-    
+
         const tabId = this.editor?.dataset.tabId;
         if (!tabId) throw new Error('Tab ID not found');
-    
-        // Clean the content before saving
-        const cleanedContent = this.cleanTextContent(content);
-    
+
         const response = await fetch('/text/update', {
             method: 'POST',
             headers: {
@@ -523,15 +535,16 @@ class TextEditor {
             },
             body: JSON.stringify({
                 tabId,
-                content: cleanedContent
+                content: content,
+                explanation: explanation
             })
         });
-    
+
         if (!response.ok) {
             const data = await response.json();
             throw new Error(data.message || 'Failed to save text');
         }
-    
+
         return response.json();
     }
 
@@ -618,48 +631,73 @@ class TextEditor {
     }
 
     renderHistory(changes) {
-        const existingHistory = this.annotationsList.querySelector('.history-section');
-        if (existingHistory) existingHistory.remove();
-    
-        const historySection = document.createElement('div');
-        historySection.className = TextEditor.CSS.history;
+        // Clear existing history
+        this.historyContainer.innerHTML = '';
         
         const title = document.createElement('h3');
         title.className = TextEditor.CSS.historyTitle;
         title.textContent = 'Change History';
-        historySection.appendChild(title);
-    
+        this.historyContainer.appendChild(title);
+
         if (changes.length === 0) {
             const emptyState = document.createElement('p');
             emptyState.className = TextEditor.CSS.historyContent;
             emptyState.textContent = 'No changes recorded yet';
-            historySection.appendChild(emptyState);
-        } else {
-            changes.forEach(change => {
-                const changeItem = document.createElement('div');
-                changeItem.className = TextEditor.CSS.historyItem;
-                changeItem.innerHTML = `
-                    <div class="flex items-center mb-4">
-                        <span class="${TextEditor.CSS.historyContent}">"${change.original_text}"</span>
-                        <svg class="mx-4 w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
-                        </svg>
-                        <span class="${TextEditor.CSS.historyContent}">"${change.updated_text}"</span>
-                    </div>
-                    <div class="mb-2">
-                        <span class="font-bold text-gray-700 dark:text-gray-300">Explanation: </span>
-                        <span class="${TextEditor.CSS.historyContent}">${change.explanation || 'No explanation provided'}</span>
-                    </div>
-                    <div class="${TextEditor.CSS.historyTimestamp}">
-                        ${new Date(change.created_at).toLocaleString()}
-                    </div>
-                `;
-                historySection.appendChild(changeItem);
-            });
+            this.historyContainer.appendChild(emptyState);
+            return;
+        }
+
+        changes.forEach(change => {
+            const changeItem = document.createElement('div');
+            changeItem.className = TextEditor.CSS.historyItem;
+            changeItem.innerHTML = `
+                <div class="flex items-center mb-4">
+                    <span class="${TextEditor.CSS.historyContent}">"${change.original_text}"</span>
+                    <svg class="mx-4 w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+                    </svg>
+                    <span class="${TextEditor.CSS.historyContent}">"${change.updated_text}"</span>
+                </div>
+                <div class="mb-2">
+                    <span class="font-bold text-gray-700 dark:text-gray-300">Explanation: </span>
+                    <span class="${TextEditor.CSS.historyContent}">${change.explanation || 'No explanation provided'}</span>
+                </div>
+                <div class="${TextEditor.CSS.historyTimestamp}">
+                    ${new Date(change.created_at).toLocaleString()}
+                </div>
+            `;
+            this.historyContainer.appendChild(changeItem);
+        });
+    }
+
+    clearAnnotations() {
+        // Clear annotation highlights from editor
+        const highlights = this.editor.querySelectorAll('[data-annotation-id]');
+        highlights.forEach(highlight => {
+            const parent = highlight.parentNode;
+            while (highlight.firstChild) {
+                parent.insertBefore(highlight.firstChild, highlight);
+            }
+            highlight.remove();
+        });
+    
+        // Clear annotation list
+        const annotationsContainer = this.annotationsList.querySelector('.annotations-container');
+        if (annotationsContainer) {
+            annotationsContainer.innerHTML = '';
         }
     
-        this.annotationsList.appendChild(historySection);
+        // Clear process button
+        const processButton = this.annotationsList.querySelector('.process-button');
+        if (processButton) {
+            processButton.remove();
+        }
+    
+        // Clear annotations map
+        this.annotations.clear();
+        this.saveAnnotations();
     }
+    
     
 }
 

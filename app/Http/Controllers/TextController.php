@@ -23,41 +23,45 @@ class TextController extends Controller
     {
         $request->validate([
             'tabId' => 'required|exists:tabs,id',
-            'content' => 'required|string'
+            'content' => 'required|string',
+            'explanation' => 'nullable|string' // Add explanation validation
         ]);
-
+        
         try {
             // Get current text record or create new one
             $text = UserText::where('tab_id', $request->tabId)
-                       ->latest()
-                       ->first();
-
+                        ->latest()
+                        ->first();
+        
             if ($text) {
                 // Create new version with previous version reference
                 $newText = UserText::create([
                     'user_id' => auth()->id(),
                     'tab_id' => $request->tabId,
                     'text_content' => $request->content,
-                    'previous_version_id' => $text->id
+                    'previous_version_id' => $text->id,
+                    'explanation' => $request->explanation // Add explanation
                 ]);
             } else {
                 // First version
                 $newText = UserText::create([
                     'user_id' => auth()->id(),
                     'tab_id' => $request->tabId,
-                    'text_content' => $request->content
+                    'text_content' => $request->content,
+                    'explanation' => $request->explanation // Add explanation
                 ]);
             }
-
-            // Record the change
+        
+            // Record the change with explanation
             TextChange::create([
                 'user_text_id' => $newText->id,
                 'start_index' => $request->start_index ?? 0,
                 'end_index' => $request->end_index ?? strlen($request->content),
                 'original_text' => $text ? $text->text_content : '',
-                'updated_text' => $request->content
+                'updated_text' => $request->content,
+                'explanation' => $request->explanation // Add explanation
             ]);
-
+        
             return response()->json([
                 'success' => true,
                 'message' => 'Text updated successfully'
