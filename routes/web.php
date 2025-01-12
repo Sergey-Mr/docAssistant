@@ -4,6 +4,7 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\TextController;
 use App\Http\Controllers\TabController;
+use App\Http\Controllers\TextProcessingController;
 use Illuminate\Support\Facades\Auth;
 
 Route::get('/', function () {
@@ -22,6 +23,9 @@ Route::middleware(['auth', 'ensure.default.tab'])->group(function () {
     Route::post('/tabs', [TabController::class, 'store'])->name('tabs.store');
 });
 
+Route::post('/api/annotations/process', [TextProcessingController::class, 'process'])
+    ->name('annotations.process')
+    ->middleware('auth');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
