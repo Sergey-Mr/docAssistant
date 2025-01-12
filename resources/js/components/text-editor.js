@@ -419,7 +419,7 @@ class TextEditor {
             const revision = revisions[index];
             if (!revision) throw new Error('Revision not found');
     
-            // Extract texts and explanation first
+            // Extract texts and explanation
             const originalElement = revision.querySelector('.text-gray-600');
             const revisedElement = revision.querySelector('.text-green-600');
             const explanationElement = revision.querySelector('[class*="text-gray-400"]:last-child');
@@ -432,45 +432,14 @@ class TextEditor {
             const revisedText = revisedElement.textContent.replace(/['"]/g, '').trim();
             const explanation = explanationElement ? explanationElement.textContent.trim() : '';
     
-            console.log('Extracted explanation:', explanation); // Debug log
-    
-            // Update editor content
-            const editorContent = this.editor.innerText;
-            let found = false;
-    
-            if (editorContent.includes(originalText)) {
-                const newContent = editorContent.replace(originalText, revisedText);
-                this.editor.innerText = newContent;
-                found = true;
-            }
-    
-            if (!found) {
-                const walker = document.createTreeWalker(
-                    this.editor,
-                    NodeFilter.SHOW_TEXT,
-                    null,
-                    false
-                );
-    
-                let node;
-                while ((node = walker.nextNode()) && !found) {
-                    const nodeText = node.textContent.replace(/\s+/g, ' ').trim();
-                    if (nodeText.includes(originalText)) {
-                        node.textContent = node.textContent.replace(originalText, revisedText);
-                        found = true;
-                        break;
-                    }
-                }
-            }
-    
-            if (!found) {
-                throw new Error(`Original text not found: "${originalText}"`);
-            }
+            // Update editor content directly
+            this.editor.innerHTML = revisedText;
     
             // Save to database with explanation
             const cleanedContent = this.cleanTextContent(this.editor.innerHTML);
             await this.saveTextToDatabase(cleanedContent, explanation);
     
+            // Clear UI and refresh
             this.clearUIAfterRevision();
             this.showWarning('Revision applied successfully');
             this.disableAppliedButton(revision);
@@ -645,6 +614,17 @@ class TextEditor {
         changes.forEach(change => {
             const changeItem = document.createElement('div');
             changeItem.className = TextEditor.CSS.historyItem;
+            
+            // Format timestamp
+            const timestamp = new Date(change.created_at).toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+    
             changeItem.innerHTML = `
                 <div class="flex items-center mb-4">
                     <span class="${TextEditor.CSS.historyContent}">"${change.original_text}"</span>
@@ -656,6 +636,12 @@ class TextEditor {
                 <div class="mb-2">
                     <span class="font-bold text-gray-700 dark:text-gray-300">Explanation: </span>
                     <span class="${TextEditor.CSS.historyContent}">${change.explanation || 'No explanation provided'}</span>
+                </div>
+                <div class="text-sm text-gray-500 dark:text-gray-400 mt-2 flex items-center">
+                    <span>${timestamp}</span>
+                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
                 </div>
             `;
             this.historyContainer.appendChild(changeItem);
