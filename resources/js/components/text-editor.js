@@ -1,9 +1,19 @@
 export default class TextEditor {
+    static CSS = {
+        editor: 'w-full min-h-[300px] p-4 mb-4 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 resize overflow-auto',
+        modal: 'hidden absolute z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4',
+        annotation: 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-start',
+        highlight: 'bg-blue-200 dark:bg-blue-700 px-1 rounded',
+        annotationText: 'font-bold text-gray-700 dark:text-gray-300',
+        annotationContent: 'text-gray-600 dark:text-gray-400'
+    };
+
     constructor() {
         this.annotations = new Map();
         this.initializeElements();
         this.bindMethods();
         this.attachEventListeners();
+        this.loadAnnotationsForCurrentTab();
     }
 
     initializeElements() {
@@ -17,60 +27,96 @@ export default class TextEditor {
     }
 
     bindMethods() {
-        this.closeModal = this.closeModal.bind(this);
-        this.saveChanges = this.saveChanges.bind(this);
         this.handleSelection = this.handleSelection.bind(this);
         this.handleOutsideClick = this.handleOutsideClick.bind(this);
-        this.handleKeyboardSelection = this.handleKeyboardSelection.bind(this);
+        this.addAnnotation = this.addAnnotation.bind(this);
+        this.removeAnnotation = this.removeAnnotation.bind(this);
+        this.closeModal = this.closeModal.bind(this);
     }
 
     attachEventListeners() {
         if (!this.editor) return;
         
         this.editor.addEventListener('mouseup', this.handleSelection);
-        this.editor.addEventListener('keyup', this.handleKeyboardSelection);
-        this.attachModalListeners();
-        this.attachDocumentListeners();
-    }
-
-    attachModalListeners() {
+        document.addEventListener('mousedown', this.handleOutsideClick);
+        this.modal.addEventListener('mousedown', e => e.stopPropagation());
         this.input.addEventListener('focus', () => this.isEditingModal = true);
         this.input.addEventListener('blur', () => this.isEditingModal = false);
-        this.modal.addEventListener('mousedown', e => e.stopPropagation());
     }
 
-    attachDocumentListeners() {
-        document.addEventListener('mousedown', this.handleOutsideClick);
-        document.addEventListener('selectionchange', this.handleSelectionChange.bind(this));
+    loadAnnotationsForCurrentTab() {
+        const tabId = this.editor?.dataset.tabId;
+        if (!tabId) return;
+
+        this.clearAllAnnotations();
+
+        const savedAnnotations = localStorage.getItem(`annotations_${tabId}`);
+        if (savedAnnotations) {
+            const annotations = JSON.parse(savedAnnotations);
+            annotations.forEach(ann => {
+                const range = document.createRange();
+                const walker = document.createTreeWalker(
+                    this.editor,
+                    NodeFilter.SHOW_TEXT,
+                    null,
+                    false
+                );
+
+                let start = null;
+                let end = null;
+
+                while (walker.nextNode()) {
+                    const node = walker.currentNode;
+                    const content = node.textContent;
+                    const idx = content.indexOf(ann.text, 0);
+                    
+                    if (idx !== -1) {
+                        start = {node, offset: idx};
+                        end = {node, offset: idx + ann.text.length};
+                        break;
+                    }
+                }
+
+                if (start && end) {
+                    range.setStart(start.node, start.offset);
+                    range.setEnd(end.node, end.offset);
+
+                    const annotation = {
+                        id: ann.id,
+                        text: ann.text,
+                        comment: ann.comment,
+                        range: range
+                    };
+
+                    this.annotations.set(ann.id, annotation);
+                    this.highlightRange(range, ann.id);
+                    this.addAnnotationToList(annotation);
+                }
+            });
+        }
+    }
+
+    saveAnnotations() {
+        const tabId = this.editor?.dataset.tabId;
+        if (!tabId) return;
+
+        const annotationsArray = Array.from(this.annotations.values()).map(ann => ({
+            id: ann.id,
+            text: ann.text,
+            comment: ann.comment
+        }));
+
+        localStorage.setItem(`annotations_${tabId}`, JSON.stringify(annotationsArray));
     }
 
     handleSelection() {
         const selection = window.getSelection();
-        if (this.isValidSelection(selection)) {
-            this.updateSelection(selection);
+        if (selection?.toString().length > 0) {
+            this.selectedRange = selection.getRangeAt(0);
+            this.selectedTextDisplay.textContent = `"${selection.toString()}"`;
+            this.showModal();
+            this.updateModalPosition();
         }
-    }
-
-    handleKeyboardSelection(e) {
-        if (this.isSelectionKey(e)) {
-            this.handleSelection();
-        }
-    }
-
-    isSelectionKey(e) {
-        return e.shiftKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key);
-    }
-
-    isValidSelection(selection) {
-        return selection && selection.toString().length > 0;
-    }
-
-    updateSelection(selection) {
-        this.selectedRange = selection.getRangeAt(0);
-        const selectedText = selection.toString();
-        this.selectedTextDisplay.textContent = `"${selectedText}"`;
-        this.input.value = '';
-        this.updateModalPosition();
     }
 
     async addAnnotation() {
@@ -84,43 +130,32 @@ export default class TextEditor {
             range: this.selectedRange.cloneRange()
         };
 
-        // Add to annotations map
         this.annotations.set(annotationId, annotation);
-        
-        // Highlight the text
         this.highlightRange(this.selectedRange, annotationId);
-        
-        // Add to annotations list
         this.addAnnotationToList(annotation);
-        
-        // Close modal
         this.closeModal();
-        
-        // Keep the selection
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(annotation.range);
+        this.saveAnnotations();
     }
 
     highlightRange(range, annotationId) {
         const span = document.createElement('span');
-        span.className = 'bg-yellow-200 dark:bg-yellow-800';
+        span.className = TextEditor.CSS.highlight;
         span.dataset.annotationId = annotationId;
         range.surroundContents(span);
     }
 
     addAnnotationToList(annotation) {
         const annotationElement = document.createElement('div');
-        annotationElement.className = 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 border-blue-500 flex justify-between items-start';
+        annotationElement.className = TextEditor.CSS.annotation;
         annotationElement.innerHTML = `
             <div class="flex-grow">
                 <div class="mb-3">
-                    <span class="font-bold text-gray-700 dark:text-gray-300">Selected text: </span>
-                    <span class="italic text-gray-600 dark:text-gray-400">"${annotation.text}"</span>
+                    <span class="${TextEditor.CSS.annotationText}">Selected text: </span>
+                    <span class="${TextEditor.CSS.annotationContent} italic">"${annotation.text}"</span>
                 </div>
                 <div>
-                    <span class="font-bold text-gray-700 dark:text-gray-300">Comment: </span>
-                    <span class="text-gray-600 dark:text-gray-400">${annotation.comment}</span>
+                    <span class="${TextEditor.CSS.annotationText}">Comment: </span>
+                    <span class="${TextEditor.CSS.annotationContent}">${annotation.comment}</span>
                 </div>
             </div>
             <button 
@@ -136,10 +171,6 @@ export default class TextEditor {
     }
 
     removeAnnotation(annotationId) {
-        const annotation = this.annotations.get(annotationId);
-        if (!annotation) return;
-
-        // Remove highlight
         const highlightSpan = this.editor.querySelector(`[data-annotation-id="${annotationId}"]`);
         if (highlightSpan) {
             const parent = highlightSpan.parentNode;
@@ -149,69 +180,44 @@ export default class TextEditor {
             highlightSpan.remove();
         }
 
-        // Remove from list
         const annotationElement = Array.from(this.annotationsList.children)
             .find(el => el.querySelector(`button[onclick*="${annotationId}"]`));
         if (annotationElement) {
             annotationElement.remove();
         }
 
-        // Remove from map
         this.annotations.delete(annotationId);
+        this.saveAnnotations();
+    }
+
+    clearAllAnnotations() {
+        const highlights = this.editor.querySelectorAll('[data-annotation-id]');
+        highlights.forEach(highlight => {
+            const parent = highlight.parentNode;
+            while (highlight.firstChild) {
+                parent.insertBefore(highlight.firstChild, highlight);
+            }
+            highlight.remove();
+        });
+
+        this.annotationsList.innerHTML = '';
+        this.annotations.clear();
     }
 
     updateModalPosition() {
         const rect = this.selectedRange.getBoundingClientRect();
-        const position = this.calculatePosition(rect);
-        this.setModalPosition(position);
-        this.showModal();
-    }
-
-    calculatePosition(rect) {
         const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
         const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-        const MODAL_OFFSET = 10;
         
-        return {
-            top: rect.bottom + scrollTop + MODAL_OFFSET,
-            left: rect.left + scrollLeft
-        };
-    }
-
-    setModalPosition({ top, left }) {
         this.modal.style.position = 'absolute';
-        this.modal.style.top = `${top}px`;
-        this.modal.style.left = `${left}px`;
+        this.modal.style.top = `${rect.bottom + scrollTop + 10}px`;
+        this.modal.style.left = `${rect.left + scrollLeft}px`;
     }
 
     handleOutsideClick(e) {
-        if (this.shouldCloseModal(e)) {
-            this.closeModalAndClearSelection();
-        }
-    }
-
-    shouldCloseModal(e) {
-        return !this.modal.contains(e.target) && 
-               !this.editor.contains(e.target) && 
-               !this.isEditingModal;
-    }
-
-    handleSelectionChange() {
-        const selection = window.getSelection();
-        if (this.shouldCloseOnSelectionChange(selection)) {
+        if (!this.modal.contains(e.target) && !this.editor.contains(e.target)) {
             this.closeModal();
         }
-    }
-
-    shouldCloseOnSelectionChange(selection) {
-        return selection.toString().length === 0 && 
-               !this.isEditingModal && 
-               !this.modal.classList.contains('hidden');
-    }
-
-    closeModalAndClearSelection() {
-        this.closeModal();
-        window.getSelection().removeAllRanges();
     }
 
     showModal() {
@@ -221,76 +227,11 @@ export default class TextEditor {
     closeModal() {
         this.modal.classList.add('hidden');
         this.selectedRange = null;
-    }
-
-    async saveChanges() {
-        if (!this.selectedRange) return;
-        
-        try {
-            const response = await this.sendUpdateRequest();
-            const data = await response.json();
-            if (response.ok) {
-                this.updateContent();
-                this.closeModal();
-                window.showNotification('Changes saved successfully', 'success');
-            } else {
-                window.showNotification(data.error || 'Failed to save changes', 'error');
-            }
-        } catch (error) {
-            console.error('Failed to save changes:', error);
-            window.showNotification('Failed to save changes', 'error');
-        }
-    }
-
-    async sendUpdateRequest() {
-        try {
-            return await fetch('/text/update', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                },
-                body: JSON.stringify(this.getUpdatePayload())
-            });
-        } catch (error) {
-            throw new Error('Network error occurred');
-        }
-    }
-
-    getUpdatePayload() {
-        const newText = this.editor.textContent.substring(0, this.getTextOffset(this.selectedRange.startContainer, this.selectedRange.startOffset)) +
-                   this.input.value +
-                   this.editor.textContent.substring(this.getTextOffset(this.selectedRange.endContainer, this.selectedRange.endOffset));
-
-        return {
-            start_index: this.getTextOffset(this.selectedRange.startContainer, this.selectedRange.startOffset),
-            end_index: this.getTextOffset(this.selectedRange.endContainer, this.selectedRange.endOffset),
-            original_text: this.selectedRange.toString(),
-            updated_text: this.input.value,
-            full_text: newText,
-            tab_id: this.editor.dataset.tabId
-        };
-    }
-
-    getTextOffset(node, offset) {
-        const range = document.createRange();
-        range.selectNodeContents(this.editor);
-        range.setEnd(node, offset);
-        return range.toString().length;
-    }
-
-    updateContent() {
-        const range = document.createRange();
-        range.setStart(this.selectedRange.startContainer, this.selectedRange.startOffset);
-        range.setEnd(this.selectedRange.endContainer, this.selectedRange.endOffset);
-        range.deleteContents();
-        range.insertNode(document.createTextNode(this.input.value));
+        this.input.value = '';
     }
 
     destroy() {
         this.editor.removeEventListener('mouseup', this.handleSelection);
-        this.editor.removeEventListener('keyup', this.handleKeyboardSelection);
         document.removeEventListener('mousedown', this.handleOutsideClick);
-        document.removeEventListener('selectionchange', this.handleSelectionChange);
     }
 }

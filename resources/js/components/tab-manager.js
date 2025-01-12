@@ -89,6 +89,7 @@ export default class TabManager {
         try {
             const data = await this.makeRequest(`/tabs/${tabId}/content`, 'GET');
             this.updateTabContent(tabId, data.content, tabLink);
+            window.textEditor.loadAnnotationsForCurrentTab();
         } catch (error) {
             this.handleError(error, 'Failed to switch tab');
         }
