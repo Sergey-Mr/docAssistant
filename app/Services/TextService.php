@@ -5,27 +5,34 @@ namespace App\Services;
 use App\Models\Tab;
 use App\Models\UserText;
 use App\Models\TextChange;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class TextService
 {
     public function createTextVersion(array $data): array
     {
-        $tab = Tab::findOrFail($data['tab_id']);
-        
-        $userText = $this->createUserText($tab, $data);
-        $change = $this->createTextChange($userText, $data);
-        
-        return [
-            'text' => $userText,
-            'change' => $change
-        ];
+        try {
+            $tab = Tab::where('id', $data['tab_id'])
+                     ->where('user_id', auth()->id())
+                     ->firstOrFail();
+            
+            $userText = $this->createUserText($tab, $data);
+            $change = $this->createTextChange($userText, $data);
+            
+            return [
+                'text' => $userText,
+                'change' => $change
+            ];
+        } catch (ModelNotFoundException $e) {
+            throw new \Exception('Tab not found or access denied');
+        }
     }
 
     private function createUserText(Tab $tab, array $data): UserText
     {
         return UserText::create([
             'user_id' => auth()->id(),
-            'tab_id' => $data['tab_id'],
+            'tab_id' => $tab->id,
             'text_content' => $data['full_text'],
             'previous_version_id' => $tab->latestText()?->id
         ]);
