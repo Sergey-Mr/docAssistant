@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "target": "ES2015",
+        "module": "ESNext",
+        "moduleResolution": "node",
+        "baseUrl": "./resources/js",
+        "typeRoots": [
+            "./resources/js/types"
+        ]
+    },
+    "include": [
+        "resources/js/**/*"
+    ]
+}

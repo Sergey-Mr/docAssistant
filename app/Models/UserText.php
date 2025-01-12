@@ -11,6 +11,7 @@ class UserText extends Model
 {
     protected $fillable = [
         'user_id',
+        'tab_id',
         'text_content',
         'previous_version_id'
     ];

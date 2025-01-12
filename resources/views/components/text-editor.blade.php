@@ -1,12 +1,14 @@
-@props(['initialText' => 'Start typing or paste your text here...'])
+@props(['initialText' => 'Start typing or paste your text here...', 'tab_id'])
+@inject('tabController', 'App\Http\Controllers\TabController')
 
 <div class="text-editor-container">
     <div 
         id="text-editor" 
         class="w-full min-h-[300px] p-4 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 resize overflow-auto" 
         contenteditable="true"
+        data-tab-id="{{ $tab_id }}"
     >
-        {{ $initialText }}
+        {{ $tabController->getLatestText($tab_id) ?? $initialText }}
     </div>
 
     <!-- Edit Modal -->
