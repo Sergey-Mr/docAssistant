@@ -24,42 +24,36 @@ class TextController extends Controller
         $request->validate([
             'tabId' => 'required|exists:tabs,id',
             'content' => 'required|string',
-            'explanation' => 'nullable|string' // Add explanation validation
+            'explanation' => 'nullable|string'
         ]);
         
         try {
-            // Get current text record or create new one
             $text = UserText::where('tab_id', $request->tabId)
                         ->latest()
                         ->first();
         
             if ($text) {
-                // Create new version with previous version reference
                 $newText = UserText::create([
                     'user_id' => auth()->id(),
                     'tab_id' => $request->tabId,
                     'text_content' => $request->content,
                     'previous_version_id' => $text->id,
-                    'explanation' => $request->explanation // Add explanation
                 ]);
             } else {
-                // First version
                 $newText = UserText::create([
                     'user_id' => auth()->id(),
                     'tab_id' => $request->tabId,
                     'text_content' => $request->content,
-                    'explanation' => $request->explanation // Add explanation
                 ]);
             }
         
-            // Record the change with explanation
             TextChange::create([
                 'user_text_id' => $newText->id,
                 'start_index' => $request->start_index ?? 0,
                 'end_index' => $request->end_index ?? strlen($request->content),
                 'original_text' => $text ? $text->text_content : '',
                 'updated_text' => $request->content,
-                'explanation' => $request->explanation // Add explanation
+                'explanation' => $request->explanation
             ]);
         
             return response()->json([
@@ -76,21 +70,21 @@ class TextController extends Controller
     }
 
     public function history($tabId)
-    {
-        try {
-            $changes = TextChange::join('user_texts', 'text_changes.user_text_id', '=', 'user_texts.id')
-                ->where('user_texts.tab_id', $tabId)
-                ->orderBy('text_changes.created_at', 'desc')
-                ->select('text_changes.*')
-                ->get();
+{
+    try {
+        $changes = TextChange::join('user_texts', 'text_changes.user_text_id', '=', 'user_texts.id')
+            ->where('user_texts.tab_id', $tabId)
+            ->orderBy('text_changes.created_at', 'desc')
+            ->select('text_changes.*')
+            ->get();
         
-            return response()->json($changes);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Failed to fetch history'
-            ], 500);
-        }
+        return response()->json($changes);
+    } catch (\Exception $e) {
+        return response()->json([
+            'error' => 'Failed to fetch history'
+        ], 500);
     }
+}
 
     private function validateUpdateRequest(Request $request): array
     {

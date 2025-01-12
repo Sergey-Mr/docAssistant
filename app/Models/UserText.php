@@ -13,7 +13,8 @@ class UserText extends Model
         'user_id',
         'tab_id',
         'text_content',
-        'previous_version_id'
+        'previous_version_id',
+        'explanation',
     ];
 
     public function changes(): HasMany

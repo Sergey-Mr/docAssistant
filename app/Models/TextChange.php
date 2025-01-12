@@ -12,7 +12,8 @@ class TextChange extends Model
         'start_index',
         'end_index',
         'original_text',
-        'updated_text'
+        'updated_text',
+        'explanation'
     ];
 
     public function userText(): BelongsTo

@@ -419,7 +419,7 @@ class TextEditor {
             const revision = revisions[index];
             if (!revision) throw new Error('Revision not found');
     
-            // Extract texts with proper error handling
+            // Extract texts and explanation first
             const originalElement = revision.querySelector('.text-gray-600');
             const revisedElement = revision.querySelector('.text-green-600');
             const explanationElement = revision.querySelector('[class*="text-gray-400"]:last-child');
@@ -431,6 +431,8 @@ class TextEditor {
             const originalText = originalElement.textContent.replace(/['"]/g, '').trim();
             const revisedText = revisedElement.textContent.replace(/['"]/g, '').trim();
             const explanation = explanationElement ? explanationElement.textContent.trim() : '';
+    
+            console.log('Extracted explanation:', explanation); // Debug log
     
             // Update editor content
             const editorContent = this.editor.innerText;
@@ -468,7 +470,7 @@ class TextEditor {
             // Save to database with explanation
             const cleanedContent = this.cleanTextContent(this.editor.innerHTML);
             await this.saveTextToDatabase(cleanedContent, explanation);
-
+    
             this.clearUIAfterRevision();
             this.showWarning('Revision applied successfully');
             this.disableAppliedButton(revision);
@@ -526,6 +528,8 @@ class TextEditor {
         const tabId = this.editor?.dataset.tabId;
         if (!tabId) throw new Error('Tab ID not found');
 
+        console.log('Saving with explanation:', explanation); 
+
         const response = await fetch('/text/update', {
             method: 'POST',
             headers: {
@@ -535,8 +539,8 @@ class TextEditor {
             },
             body: JSON.stringify({
                 tabId,
-                content: content,
-                explanation: explanation
+                content,
+                explanation 
             })
         });
 
@@ -631,22 +635,13 @@ class TextEditor {
     }
 
     renderHistory(changes) {
-        // Clear existing history
         this.historyContainer.innerHTML = '';
         
         const title = document.createElement('h3');
         title.className = TextEditor.CSS.historyTitle;
         title.textContent = 'Change History';
         this.historyContainer.appendChild(title);
-
-        if (changes.length === 0) {
-            const emptyState = document.createElement('p');
-            emptyState.className = TextEditor.CSS.historyContent;
-            emptyState.textContent = 'No changes recorded yet';
-            this.historyContainer.appendChild(emptyState);
-            return;
-        }
-
+    
         changes.forEach(change => {
             const changeItem = document.createElement('div');
             changeItem.className = TextEditor.CSS.historyItem;
@@ -661,9 +656,6 @@ class TextEditor {
                 <div class="mb-2">
                     <span class="font-bold text-gray-700 dark:text-gray-300">Explanation: </span>
                     <span class="${TextEditor.CSS.historyContent}">${change.explanation || 'No explanation provided'}</span>
-                </div>
-                <div class="${TextEditor.CSS.historyTimestamp}">
-                    ${new Date(change.created_at).toLocaleString()}
                 </div>
             `;
             this.historyContainer.appendChild(changeItem);
