@@ -165,7 +165,7 @@ class TextEditor {
         const annotationElement = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
         if (annotationElement) {
             console.log('Source:', source); 
-            const color = source === 'user' ? '#10B981' : '#3B82F6'; // green-500 : blue-500
+            const color = source === 'user' ? '#3B82F6' : '#3B82F6'; // green-500 : blue-500
             annotationElement.style.borderLeftColor = color; 
             annotationElement.style.borderLeftWidth = '4px'; 
         }
@@ -404,38 +404,82 @@ class TextEditor {
 
     async applyRevision(index) {
         try {
-            // Get revision details
             const results = this.annotationsList.querySelector('.results-container');
             const revisions = results.querySelectorAll('.border-l-4');
             const revision = revisions[index];
             if (!revision) throw new Error('Revision not found');
     
-            // Extract original and revised text
-            const originalText = revision.querySelector('.text-gray-600').textContent.replace(/['"]/g, '');
-            const revisedText = revision.querySelector('.text-green-600').textContent.replace(/['"]/g, '');
+            // Extract and normalize texts, removing quotes and normalizing whitespace
+            const originalText = revision.querySelector('.text-gray-600').textContent
+                .replace(/['"]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            const revisedText = revision.querySelector('.text-green-600').textContent
+                .replace(/['"]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+            
+            console.log('Searching for text:', originalText);
+            console.log('Will replace with:', revisedText);
     
-            // Update text in editor
-            const content = this.editor.innerHTML;
-            const updatedContent = content.replace(originalText, revisedText);
-            this.editor.innerHTML = updatedContent;
+            // Get current editor content
+            const editorContent = this.editor.innerText;
+            console.log('Editor content:', editorContent);
     
-            // Update database
-            await this.saveTextToDatabase(updatedContent);
+            let found = false;
+    
+            // First try: Direct replacement in editor's text content
+            if (editorContent.includes(originalText)) {
+                const newContent = editorContent.replace(originalText, revisedText);
+                this.editor.innerText = newContent;
+                found = true;
+            }
+    
+            // Second try: Search in text nodes if direct replacement failed
+            if (!found) {
+                const walker = document.createTreeWalker(
+                    this.editor,
+                    NodeFilter.SHOW_TEXT,
+                    null,
+                    false
+                );
+    
+                let node;
+                while ((node = walker.nextNode()) && !found) {
+                    const nodeText = node.textContent.replace(/\s+/g, ' ').trim();
+                    console.log('Checking node:', nodeText);
+    
+                    if (nodeText.includes(originalText)) {
+                        node.textContent = node.textContent.replace(originalText, revisedText);
+                        found = true;
+                        break;
+                    }
+                }
+            }
+    
+            if (!found) {
+                throw new Error(`Original text not found. Searching for: "${originalText}"`);
+            }
+    
+            // Clean and update content
+            const cleanedContent = this.cleanTextContent(this.editor.innerHTML);
+            await this.saveTextToDatabase(cleanedContent);
     
             // Update annotation if exists
-            const annotation = Array.from(this.annotations.values()).find(ann => ann.text === originalText);
+            const annotation = Array.from(this.annotations.values())
+                .find(ann => ann.text === originalText);
+            
             if (annotation) {
                 annotation.text = revisedText;
                 this.saveAnnotations();
             }
     
-            // Update UI
             this.showWarning('Revision applied successfully');
             this.disableAppliedButton(revision);
     
         } catch (error) {
             console.error('Error applying revision:', error);
-            this.showWarning('Failed to apply revision');
+            this.showWarning('Failed to apply revision: ' + error.message);
         }
     }
 
