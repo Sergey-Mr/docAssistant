@@ -29,7 +29,33 @@ class ChatGPTService
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => "You are a text revision assistant. Analyze each text segment and its suggested changes. Return your response in JSON format with the following structure: {\"revisions\": [{\"original\": \"original text\", \"revised\": \"improved version\", \"explanation\": \"why changes were made\"}]}"
+                        'content' => "
+                        You are a text revision assistant. Your task is to revise specific parts of a given text based on annotations and comments. You will receive:
+                        - A complete text (referred to as 'context').
+                        - A list of annotations specifying the text to be revised and comments providing guidance on how to revise them.
+
+                        ### Your Tasks:
+                        1. Keep the entire original text intact except for the annotated parts.
+                        2. Revise only the annotated parts based on the provided comments, ensuring that the revisions blend seamlessly with the rest of the text.
+                        3. Return the complete text with all revisions applied. Do not return only the revised portions.
+                        4. For each annotation, provide:
+                           - The original text of the annotated part.
+                           - The revised version of the annotated part.
+                           - A clear explanation of the changes made and why they were necessary.
+
+                        ### Response Format:
+                        Return your response as a JSON object with the following structure:
+                        {
+                          'revised_text': 'The full revised text with changes applied.',
+                          'revisions': [
+                            {
+                              'original': 'original text',
+                              'revised': 'revised version',
+                              'explanation': 'why changes were made'
+                            }
+                          ]
+                        }
+                        "
                     ],
                     [
                         'role' => 'user',
@@ -42,25 +68,29 @@ class ChatGPTService
                 'temperature' => 0.7
             ]);
         
-            if (!$response->successful()) {
-                Log::error('ChatGPT API error', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
-                throw new \Exception('ChatGPT API request failed: ' . $response->body());
-            }
-        
             $responseData = $response->json();
-            Log::info('ChatGPT Response', ['response' => $responseData]);
-        
-            $content = $responseData['choices'][0]['message']['content'];
-            $parsed = json_decode($content, true);
-        
-            if (!isset($parsed['revisions']) || !is_array($parsed['revisions'])) {
+                    
+            if (!isset($responseData['choices'][0]['message']['content'])) {
                 throw new \Exception('Invalid response structure from ChatGPT API');
             }
-        
-            return $parsed['revisions'];
+            
+            $content = $responseData['choices'][0]['message']['content'];
+            $parsed = json_decode($content, true);
+            
+            if (!isset($parsed['revised_text']) || !isset($parsed['revisions']) || !is_array($parsed['revisions'])) {
+                throw new \Exception('Invalid response structure from ChatGPT API');
+            }
+            
+            $revisedText = $parsed['revised_text'];
+            $revisions = $parsed['revisions'];
+            
+            Log::info('Revised text:', ['revised_text' => $revisedText]);
+            Log::info('Revisions details:', ['revisions' => $revisions]);
+            
+            return [
+                'revised_text' => $revisedText,
+                'revisions' => $revisions
+            ];
         
         } catch (\Exception $e) {
             Log::error('Annotation processing failed', [

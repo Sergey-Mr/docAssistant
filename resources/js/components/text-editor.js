@@ -11,7 +11,7 @@ class TextEditor {
         editor: 'w-full min-h-[300px] p-4 mb-4 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 resize overflow-auto',
         modal: 'hidden absolute z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4',
         annotation: 'p-4 bg-white dark:bg-gray-700 rounded-lg shadow-sm border-l-4 border-blue-500 dark:border-blue-500 flex justify-between items-start',
-        highlight: 'bg-blue-200 dark:bg-blue-700 px-1 rounded',
+        highlight: 'bg-blue-100 dark:bg-blue-700/50 px-1 rounded cursor-pointer transition-colors border-b-2 border-blue-400 text-gray-900 dark:text-gray-100 hover:bg-blue-200 dark:hover:bg-blue-600/50',
         annotationText: 'font-bold text-gray-700 dark:text-gray-300',
         warning: 'fixed top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg shadow-md z-50 transition-opacity duration-300',
         annotationContent: 'text-gray-600 dark:text-gray-400',
@@ -158,7 +158,31 @@ class TextEditor {
         const span = document.createElement('span');
         span.className = TextEditor.CSS.highlight;
         span.dataset.annotationId = annotationId;
-        range.surroundContents(span);
+        
+        try {
+            range.surroundContents(span);
+            span.addEventListener('mouseenter', () => {
+                const annotation = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
+                if (annotation) {
+                    annotation.classList.add('ring-2', 'ring-blue-400');
+                }
+            });
+            
+            span.addEventListener('mouseleave', () => {
+                const annotation = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
+                if (annotation) {
+                    annotation.classList.remove('ring-2', 'ring-blue-400');
+                }
+            });
+            span.addEventListener('click', () => {
+                const annotation = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
+                if (annotation) {
+                    annotation.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            });
+        } catch (error) {
+            console.error('Failed to highlight range:', error);
+        }
     }
 
     renderProcessButton() {
@@ -303,10 +327,38 @@ class TextEditor {
     async callProcessingAPI(retries = 3) {
         const payload = this.prepareAnnotationsPayload();
         const options = this.prepareRequestOptions(payload);
+        
         for (let attempt = 0; attempt < retries; attempt++) {
             try {
-                const { success, revisions } = await this.makeRequest(options);
-                return this.validateResponse({ success, revisions });
+                const response = await this.makeRequest(options);
+                
+                // Parse the revised_text JSON string
+                let revisedTextData;
+                try {
+                    revisedTextData = JSON.parse(response.revised_text);
+                } catch (e) {
+                    revisedTextData = response.revised_text;
+                }
+    
+                // Get the actual revised text
+                const revised_text = revisedTextData.revised_text || revisedTextData;
+    
+                // Parse the revisions if needed
+                let revisions = response.revisions;
+                if (typeof revisions === 'string') {
+                    revisions = JSON.parse(revisions);
+                }
+    
+                // Validate the response format
+                if (!revised_text || !Array.isArray(revisions)) {
+                    throw new AnnotationProcessingError('Invalid response format');
+                }
+    
+                return {
+                    revised_text,
+                    revisions
+                };
+    
             } catch (error) {
                 if (attempt === retries - 1) throw error;
                 await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
@@ -344,14 +396,55 @@ class TextEditor {
 
     async makeRequest(options) {
         const response = await fetch('/api/annotations/process', options);
-        const data = await response.json();
+        
         if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Server error:', {
+                status: response.status,
+                statusText: response.statusText,
+                response: errorText
+            });
+    
+            if (response.status === 500) {
+                throw new AnnotationProcessingError(
+                    'Server error occurred. Please try again later.',
+                    500
+                );
+            }
+    
             throw new AnnotationProcessingError(
-                `API request failed: ${data.message || response.statusText}`,
+                `API request failed (${response.status}): ${response.statusText}`,
                 response.status
             );
         }
-        return data;
+    
+        const data = await response.json();
+        console.log('API Response:', data);
+    
+        try {
+            if (!data.success || !data.revisions) {
+                throw new Error('Invalid response format');
+            }
+    
+            // Extract revised_text and revisions from nested structure
+            const revisedText = data.revisions.revised_text;
+            const revisions = data.revisions.revisions;
+    
+            if (!revisedText || !Array.isArray(revisions)) {
+                throw new Error('Missing or invalid response data');
+            }
+    
+            return {
+                revised_text: revisedText,
+                revisions: revisions
+            };
+    
+        } catch (error) {
+            console.error('Response parsing error:', error);
+            throw new AnnotationProcessingError(
+                `Failed to process response: ${error.message}`
+            );
+        }
     }
 
     prepareAnnotationsPayload() {
@@ -379,7 +472,7 @@ class TextEditor {
         };
     }
 
-    displayProcessingResults(revisions) {
+    displayProcessingResults({ revised_text, revisions }) {
         const existingResults = this.annotationsList.querySelector('.results-container');
         if (existingResults) existingResults.remove();
         
@@ -398,12 +491,12 @@ class TextEditor {
                     <span class="font-bold text-gray-700 dark:text-gray-300">Revised: </span>
                     <span class="text-green-600 dark:text-green-400">"${revision.revised}"</span>
                 </div>
-                <div class="mb-2">
+                <div>
                     <span class="font-bold text-gray-700 dark:text-gray-300">Explanation: </span>
-                    <span class="text-gray-600 dark:text-gray-400 gpt-explanation">${revision.explanation}</span>
+                    <span class="text-gray-600 dark:text-gray-400">${revision.explanation}</span>
                 </div>
                 <button 
-                    onclick="window.textEditor.applyRevision(${index})"
+                    onclick="window.textEditor.applyRevision(${index}, '${revised_text}')"
                     class="mt-3 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors text-sm"
                 >
                     Apply Change
@@ -414,48 +507,25 @@ class TextEditor {
         this.annotationsList.appendChild(resultsContainer);
     }
 
-    async applyRevision(index) {
+    async applyRevision(index, revisedText) {
         try {
+            // Update editor content with the full revised text
+            this.editor.innerHTML = revisedText;
+    
+            // Get the specific revision for the explanation
             const results = this.annotationsList.querySelector('.results-container');
             const revisions = results.querySelectorAll('.border-l-4');
             const revision = revisions[index];
             if (!revision) throw new Error('Revision not found');
     
-            // Extract texts and GPT explanation
-            const originalElement = revision.querySelector('.text-gray-600');
-            const revisedElement = revision.querySelector('.text-green-600');
-            const gptExplanationElement = revision.querySelector('.gpt-explanation');
+            const explanationElement = revision.querySelector('[class*="text-gray-400"]:last-child');
+            const explanation = explanationElement ? explanationElement.textContent.trim() : '';
     
-            if (!originalElement || !revisedElement || !gptExplanationElement) {
-                throw new Error('Could not find required elements');
-            }
+            // Save to database
+            const cleanedContent = this.cleanTextContent(revisedText);
+            await this.saveTextToDatabase(cleanedContent, explanation);
     
-            const originalText = originalElement.textContent.replace(/["""]/g, '').trim();
-            const revisedText = revisedElement.textContent.replace(/["""]/g, '').trim();
-            const gptExplanation = gptExplanationElement.textContent.trim();
-    
-            // Update editor content
-            const editorContent = this.editor.innerHTML;
-            const escapedOriginalText = originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const regex = new RegExp(escapedOriginalText, 'g');
-            
-            if (regex.test(editorContent)) {
-                const newContent = editorContent.replace(regex, revisedText);
-                this.editor.innerHTML = newContent;
-            } else {
-                const textContent = this.editor.textContent;
-                if (textContent.includes(originalText)) {
-                    const newContent = textContent.replace(originalText, revisedText);
-                    this.editor.textContent = newContent;
-                } else {
-                    throw new Error(`Original text not found: "${originalText}"`);
-                }
-            }
-    
-            // Save to database with GPT's explanation
-            const cleanedContent = this.cleanTextContent(this.editor.innerHTML);
-            await this.saveTextToDatabase(cleanedContent, gptExplanation);
-    
+            // Clear UI and refresh
             this.clearUIAfterRevision();
             this.showWarning('Revision applied successfully');
             this.disableAppliedButton(revision);
@@ -465,20 +535,6 @@ class TextEditor {
             console.error('Error applying revision:', error);
             this.showWarning('Failed to apply revision: ' + error.message);
         }
-    }
-
-    cleanTextContent(html) {
-        const temp = document.createElement('div');
-        temp.innerHTML = html;
-        
-        // Remove all annotation spans but keep their text content
-        const spans = temp.querySelectorAll('[data-annotation-id]');
-        spans.forEach(span => {
-            const text = span.textContent;
-            span.replaceWith(text);
-        });
-        
-        return temp.textContent.trim();
     }
 
     clearUIAfterRevision() {
@@ -505,6 +561,20 @@ class TextEditor {
         this.saveAnnotations();
     }
 
+    cleanTextContent(html) {
+        // Create a temporary div to handle HTML content
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        
+        // Remove all annotation spans but keep their text content
+        const spans = temp.querySelectorAll('[data-annotation-id]');
+        spans.forEach(span => {
+            const text = span.textContent;
+            span.replaceWith(text);
+        });
+        
+        return temp.textContent;
+    }
     
     async saveTextToDatabase(content, explanation = '') {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
@@ -630,6 +700,17 @@ class TextEditor {
         changes.forEach(change => {
             const changeItem = document.createElement('div');
             changeItem.className = TextEditor.CSS.historyItem;
+            
+            // Format timestamp
+            const timestamp = new Date(change.created_at).toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+    
             changeItem.innerHTML = `
                 <div class="flex items-center mb-4">
                     <span class="${TextEditor.CSS.historyContent}">"${change.original_text}"</span>
@@ -641,6 +722,12 @@ class TextEditor {
                 <div class="mb-2">
                     <span class="font-bold text-gray-700 dark:text-gray-300">Explanation: </span>
                     <span class="${TextEditor.CSS.historyContent}">${change.explanation || 'No explanation provided'}</span>
+                </div>
+                <div class="text-sm text-gray-500 dark:text-gray-400 mt-2 flex items-center">
+                    <span>${timestamp}</span>
+                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
                 </div>
             `;
             this.historyContainer.appendChild(changeItem);
