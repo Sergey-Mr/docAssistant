@@ -34,10 +34,32 @@ export default class TabManager {
                     name: 'New Tab'
                 })
             });
-
+    
             if (response.ok) {
                 const data = await response.json();
-                window.location.href = `/dashboard?tab=${data.tab.id}`;
+                
+                const tabsContainer = document.querySelector('.flex.space-x-2');
+                const newTabHtml = `
+                    <div class="flex items-center tab-item">
+                        <a href="/dashboard?tab=${data.tab.id}"
+                           class="flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap
+                           text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">
+                            ${data.tab.name}
+                            <button data-tab-id="${data.tab.id}" 
+                                class="delete-tab-btn ml-2 text-gray-400 hover:text-red-500 focus:outline-none">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </button>
+                        </a>
+                    </div>
+                `;
+                tabsContainer.insertAdjacentHTML('beforeend', newTabHtml);
+    
+                const newTabLink = document.querySelector(`a[href="/dashboard?tab=${data.tab.id}"]`);
+                this.switchTab(data.tab.id, newTabLink);
+                
+                window.showNotification('Tab created successfully', 'success');
             } else {
                 window.showNotification('Failed to create tab', 'error');
             }

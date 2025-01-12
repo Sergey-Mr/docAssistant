@@ -28,6 +28,14 @@ class TabController extends Controller
         return $tab?->latestText()?->text_content;
     }
 
+    public function getContent($id)
+    {
+        $tab = Tab::findOrFail($id);
+        return response()->json([
+            'content' => $tab->latestText()?->text_content ?? ''
+        ]);
+    }
+
     public function destroy($id)
     {
         try {

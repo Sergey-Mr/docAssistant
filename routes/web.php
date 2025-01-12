@@ -29,6 +29,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     
     Route::post('/text/update', [TextController::class, 'update'])->name('text.update');
+    Route::get('/tabs/{tab}/content', [TabController::class, 'getContent'])->name('tabs.content');
     Route::delete('/tabs/{tab}', [TabController::class, 'destroy'])->name('tabs.destroy');
 
 });
