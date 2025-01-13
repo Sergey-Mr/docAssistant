@@ -353,6 +353,7 @@ class TextEditor {
         for (let attempt = 0; attempt < retries; attempt++) {
             try {
                 const response = await this.makeRequest(options);
+                console.log(response);
                 
                 // Parse the revised_text JSON string
                 let revisedTextData;
@@ -375,7 +376,7 @@ class TextEditor {
                 if (!revised_text || !Array.isArray(revisions)) {
                     throw new AnnotationProcessingError('Invalid response format');
                 }
-    
+                
                 return {
                     revised_text,
                     revisions
@@ -518,7 +519,22 @@ class TextEditor {
     
         // Add single apply changes button
         const applyButton = document.createElement('button');
-        applyButton.className = 'w-full mt-6 px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-2 font-medium';
+        applyButton.style.cssText = `
+            width: 100%; 
+            margin-top: 1.5rem; 
+            padding: 0.75rem 1rem; 
+            background-color: #22c55e; /* Equivalent to bg-green-500 */
+            color: white; 
+            border-radius: 0.5rem; 
+            font-weight: 500; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 0.5rem; 
+            transition: background-color 0.3s ease;
+        `;
+        applyButton.onmouseover = () => applyButton.style.backgroundColor = "#16a34a"; // hover:bg-green-600
+        applyButton.onmouseout = () => applyButton.style.backgroundColor = "#22c55e"; // bg-green-500
         applyButton.innerHTML = `
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
@@ -526,6 +542,7 @@ class TextEditor {
             Apply All Changes
         `;
         applyButton.onclick = () => this.applyRevision(null, revised_text);
+            
         
         resultsContainer.appendChild(applyButton);
         this.annotationsList.appendChild(resultsContainer);
@@ -544,13 +561,14 @@ class TextEditor {
             const results = this.annotationsList.querySelector('.results-container');
             if (!results) throw new Error('No revisions found');
     
-            // Get explanations from all revisions
-            const explanations = Array.from(
-                results.querySelectorAll('.text-gray-400:last-child')
-            ).map(el => el.textContent.trim()).filter(Boolean);
+            // Get explanations directly from the revisions in results container
+            const explanationElements = Array.from(
+                results.querySelectorAll('.text-gray-600.dark\\:text-gray-400')
+            ).filter(el => el.previousElementSibling?.textContent.includes('Explanation:'));
     
-            // Combine explanations
-            const explanation = explanations.join('; ');
+            const explanations = explanationElements
+                .map(el => el.textContent)
+                .filter(Boolean);
     
             // Clean the content before saving
             const cleanedContent = this.cleanTextContent(revisedText);
@@ -558,8 +576,11 @@ class TextEditor {
                 throw new Error('No valid content to save');
             }
     
-            // Save to database
-            await this.saveTextToDatabase(cleanedContent, explanation);
+            // Save to database with combined explanations
+            await this.saveTextToDatabase(
+                cleanedContent,
+                explanations.length ? explanations.join('; ') : 'No explanation provided'
+            );
     
             // Update UI
             this.clearUIAfterRevision();

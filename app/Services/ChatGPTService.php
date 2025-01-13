@@ -44,7 +44,7 @@ class ChatGPTService
                            - A clear explanation of the changes made and why they were necessary.
 
                         ### Response Format:
-                        Return your response as a JSON object with the following structure:
+                        Return your response as a JSON object with the following structure, but always use double quotes instead of '' when formattign the response :
                         {
                           'revised_text': 'The full revised text with changes applied.',
                           'revisions': [
