@@ -69,41 +69,65 @@ class ChatGPTService
             ]);
         
             $responseData = $response->json();
-                    
-            if (!isset($responseData['choices'][0]['message']['content'])) {
-                throw new \Exception('Invalid response structure from ChatGPT API');
-            }
-            
-            $content = $responseData['choices'][0]['message']['content'];
-            $parsed = json_decode($content, true);
-            
-            if (!isset($parsed['revised_text']) || !isset($parsed['revisions']) || !is_array($parsed['revisions'])) {
-                throw new \Exception('Invalid response structure from ChatGPT API');
-            }
-            
-            $revisedText = $parsed['revised_text'];
-            $revisions = $parsed['revisions'];
-            
-            Log::info('Revised text:', ['revised_text' => $revisedText]);
-            Log::info('Revisions details:', ['revisions' => $revisions]);
-            
-            return [
-                'revised_text' => $revisedText,
-                'revisions' => $revisions
-            ];
         
-        } catch (\Exception $e) {
-            Log::error('Annotation processing failed', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            throw $e;
+        Log::info('ChatGPT Raw Response:', ['response' => $responseData]);
+        
+        if (!isset($responseData['choices'][0]['message']['content'])) {
+            Log::error('Invalid ChatGPT response structure', ['response' => $responseData]);
+            throw new \Exception('Invalid response structure from ChatGPT API');
         }
+
+        $content = $responseData['choices'][0]['message']['content'];
+        
+        // Parse JSON once
+        $parsed = json_decode($content, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            Log::error('JSON Parse Error', [
+                'error' => json_last_error_msg(),
+                'content' => $content
+            ]);
+            throw new \Exception('Failed to parse ChatGPT response');
+        }
+
+        // Validate response structure
+        if (!isset($parsed['revised_text']) || !isset($parsed['revisions']) || !is_array($parsed['revisions'])) {
+            Log::error('Invalid response format', ['parsed' => $parsed]);
+            throw new \Exception('Invalid response format from ChatGPT');
+        }
+
+        // Validate each revision
+        foreach ($parsed['revisions'] as $revision) {
+            if (!isset($revision['original']) || !isset($revision['revised']) || !isset($revision['explanation'])) {
+                Log::error('Invalid revision format', ['revision' => $revision]);
+                throw new \Exception('Invalid revision format in ChatGPT response');
+            }
+        }
+
+        // Return validated response
+        return [
+            'success' => true,
+            'revised_text' => $parsed['revised_text'],
+            'revisions' => $parsed['revisions']
+        ];
+    
+    } catch (\Exception $e) {
+        Log::error('Annotation processing failed', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return [
+            'success' => false,
+            'message' => 'Failed to process annotations: ' . $e->getMessage()
+        ];
+    }
     }
 
     private function formatResponse(array $response): array
     {
-        // Process and format ChatGPT response
-        return $response['choices'][0]['message']['content'];
+        if (!isset($response['choices'][0]['message']['content'])) {
+            throw new \Exception('Invalid ChatGPT response format');
+        }
+        return json_decode($response['choices'][0]['message']['content'], true);
     }
 }

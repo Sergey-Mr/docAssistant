@@ -36,6 +36,16 @@ class TextEditor {
 
     initializeElements() {
         this.editor = document.getElementById('text-editor');
+        
+        if (!this.editor) {
+            throw new Error('Editor element not found');
+        }
+        
+        if (!this.editor.dataset.tabId) {
+            console.error('Missing tab_id in editor dataset');
+            this.editor.dataset.tabId = this.generateTempTabId(); 
+        }
+        
         this.modal = document.getElementById('edit-modal');
         this.input = document.getElementById('edit-text-input');
         this.selectedTextDisplay = document.getElementById('selected-text');
@@ -46,6 +56,11 @@ class TextEditor {
         this.selectedRange = null;
         this.isEditingModal = false;
     }
+
+    generateTempTabId() {
+        return `temp_${Date.now()}`;
+    }
+    
 
     bindMethods() {
         this.handleSelection = this.handleSelection.bind(this);
@@ -76,14 +91,21 @@ class TextEditor {
     }
 
     loadAnnotationsForCurrentTab() {
-        const tabId = this.editor?.dataset.tabId;
-        if (!tabId) return;
-
-        this.clearAllAnnotations();
-        const savedAnnotations = localStorage.getItem(`annotations_${tabId}`);
-        if (savedAnnotations) {
-            const annotations = JSON.parse(savedAnnotations);
-            annotations.forEach(ann => this.restoreAnnotation(ann));
+        if (this.isLoadingAnnotations) return; 
+        
+        try {
+            this.isLoadingAnnotations = true;
+            const tabId = this.editor?.dataset.tabId;
+            if (!tabId) return;
+    
+            this.clearAllAnnotations();
+            const savedAnnotations = localStorage.getItem(`annotations_${tabId}`);
+            if (savedAnnotations) {
+                const annotations = JSON.parse(savedAnnotations);
+                annotations.forEach(ann => this.restoreAnnotation(ann));
+            }
+        } finally {
+            this.isLoadingAnnotations = false;
         }
     }
 
@@ -421,30 +443,24 @@ class TextEditor {
         const data = await response.json();
         console.log('API Response:', data);
     
-        try {
-            if (!data.success || !data.revisions) {
-                throw new Error('Invalid response format');
-            }
-    
-            // Extract revised_text and revisions from nested structure
-            const revisedText = data.revisions.revised_text;
-            const revisions = data.revisions.revisions;
-    
-            if (!revisedText || !Array.isArray(revisions)) {
-                throw new Error('Missing or invalid response data');
-            }
-    
-            return {
-                revised_text: revisedText,
-                revisions: revisions
-            };
-    
-        } catch (error) {
-            console.error('Response parsing error:', error);
-            throw new AnnotationProcessingError(
-                `Failed to process response: ${error.message}`
-            );
+        // Handle nested revisions structure
+        if (!data.success) {
+            throw new AnnotationProcessingError(data.message || 'Processing failed');
         }
+    
+        // Extract data from nested revisions
+        const revisedText = data.revisions.revised_text;
+        const revisionsList = data.revisions.revisions;
+    
+        if (!revisedText || !Array.isArray(revisionsList)) {
+            console.error('Invalid response structure:', data);
+            throw new AnnotationProcessingError('Invalid response format');
+        }
+    
+        return {
+            revised_text: revisedText,
+            revisions: revisionsList
+        };
     }
 
     prepareAnnotationsPayload() {
@@ -479,9 +495,10 @@ class TextEditor {
         const resultsContainer = document.createElement('div');
         resultsContainer.className = 'results-container mt-6 space-y-4';
         
+        // Display all revisions without individual buttons
         revisions.forEach((revision, index) => {
             const resultElement = document.createElement('div');
-            resultElement.className = 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 border-[#10B981]';
+            resultElement.className = 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 border-[#10B981] mb-4';
             resultElement.innerHTML = `
                 <div class="mb-2">
                     <span class="font-bold text-gray-700 dark:text-gray-300">Original: </span>
@@ -495,45 +512,70 @@ class TextEditor {
                     <span class="font-bold text-gray-700 dark:text-gray-300">Explanation: </span>
                     <span class="text-gray-600 dark:text-gray-400">${revision.explanation}</span>
                 </div>
-                <button 
-                    onclick="window.textEditor.applyRevision(${index}, '${revised_text}')"
-                    class="mt-3 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors text-sm"
-                >
-                    Apply Change
-                </button>
             `;
             resultsContainer.appendChild(resultElement);
         });
+    
+        // Add single apply changes button
+        const applyButton = document.createElement('button');
+        applyButton.className = 'w-full mt-6 px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-2 font-medium';
+        applyButton.innerHTML = `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            Apply All Changes
+        `;
+        applyButton.onclick = () => this.applyRevision(null, revised_text);
+        
+        resultsContainer.appendChild(applyButton);
         this.annotationsList.appendChild(resultsContainer);
     }
 
     async applyRevision(index, revisedText) {
         try {
+            if (!revisedText || typeof revisedText !== 'string') {
+                throw new Error('Invalid revised text received');
+            }
+    
             // Update editor content with the full revised text
             this.editor.innerHTML = revisedText;
     
-            // Get the specific revision for the explanation
+            // Get all revisions for history
             const results = this.annotationsList.querySelector('.results-container');
-            const revisions = results.querySelectorAll('.border-l-4');
-            const revision = revisions[index];
-            if (!revision) throw new Error('Revision not found');
+            if (!results) throw new Error('No revisions found');
     
-            const explanationElement = revision.querySelector('[class*="text-gray-400"]:last-child');
-            const explanation = explanationElement ? explanationElement.textContent.trim() : '';
+            // Get explanations from all revisions
+            const explanations = Array.from(
+                results.querySelectorAll('.text-gray-400:last-child')
+            ).map(el => el.textContent.trim()).filter(Boolean);
+    
+            // Combine explanations
+            const explanation = explanations.join('; ');
+    
+            // Clean the content before saving
+            const cleanedContent = this.cleanTextContent(revisedText);
+            if (!cleanedContent.trim()) {
+                throw new Error('No valid content to save');
+            }
     
             // Save to database
-            const cleanedContent = this.cleanTextContent(revisedText);
             await this.saveTextToDatabase(cleanedContent, explanation);
     
-            // Clear UI and refresh
+            // Update UI
             this.clearUIAfterRevision();
-            this.showWarning('Revision applied successfully');
-            this.disableAppliedButton(revision);
-            this.loadChangeHistory();
+            this.showWarning('Changes applied successfully');
+            
+            // Disable the apply button
+            const applyButton = results.querySelector('button');
+            if (applyButton) {
+                this.disableAppliedButton(results);
+            }
+    
+            await this.loadChangeHistory();
     
         } catch (error) {
             console.error('Error applying revision:', error);
-            this.showWarning('Failed to apply revision: ' + error.message);
+            this.showWarning(`Failed to apply changes: ${error.message}`);
         }
     }
 
@@ -577,34 +619,53 @@ class TextEditor {
     }
     
     async saveTextToDatabase(content, explanation = '') {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-        if (!csrfToken) throw new Error('CSRF token not found');
-
-        const tabId = this.editor?.dataset.tabId;
-        if (!tabId) throw new Error('Tab ID not found');
-
-        console.log('Saving with explanation:', explanation); 
-
-        const response = await fetch('/text/update', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': csrfToken
-            },
-            body: JSON.stringify({
-                tabId,
-                content,
-                explanation 
-            })
-        });
-
-        if (!response.ok) {
+        try {
+            // Get and validate tab_id
+            const tabId = parseInt(this.editor?.dataset?.tabId);
+            console.log('Current tab ID:', tabId);
+            
+            if (!tabId || isNaN(tabId)) {
+                throw new Error('Invalid tab ID');
+            }
+    
+            // Get CSRF token
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+            if (!csrfToken) {
+                throw new Error('CSRF token not found');
+            }
+    
+            // Prepare request body matching database schema
+            const requestBody = {
+                tabId: tabId, // Changed from tab_id to tabId to match controller
+                content: content?.trim() || '', // Changed from text_content to content to match controller
+                explanation: explanation?.trim() || ''
+            };
+    
+            console.log('Request body:', requestBody);
+    
+            const response = await fetch('/text/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken
+                },
+                body: JSON.stringify(requestBody)
+            });
+    
             const data = await response.json();
-            throw new Error(data.message || 'Failed to save text');
+    
+            if (!response.ok) {
+                console.error('Server error:', data);
+                throw new Error(data.message || 'Failed to save text');
+            }
+    
+            return data;
+    
+        } catch (error) {
+            console.error('Error saving text to database:', error);
+            throw error;
         }
-
-        return response.json();
     }
 
     disableAppliedButton(revision) {
