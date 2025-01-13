@@ -7,6 +7,7 @@ class AnnotationProcessingError extends Error {
 }
 
 class TextEditor {
+    // Common CSS classes
     static CSS = {
         editor: 'w-full min-h-[300px] p-4 mb-4 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 resize overflow-auto',
         modal: 'hidden absolute z-50 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4',
@@ -31,21 +32,20 @@ class TextEditor {
         this.bindMethods();
         this.attachEventListeners();
         this.loadAnnotationsForCurrentTab();
-        this.loadChangeHistory(); // Add this line
+        this.loadChangeHistory();
     }
 
+    // ---------------- Initialization & Event Binding ----------------
     initializeElements() {
         this.editor = document.getElementById('text-editor');
-        
-        if (!this.editor) {
-            throw new Error('Editor element not found');
-        }
-        
+        if (!this.editor) throw new Error('Editor element not found');
+
+        // Ensure tabId is available
         if (!this.editor.dataset.tabId) {
             console.error('Missing tab_id in editor dataset');
-            this.editor.dataset.tabId = this.generateTempTabId(); 
+            this.editor.dataset.tabId = this.generateTempTabId();
         }
-        
+
         this.modal = document.getElementById('edit-modal');
         this.input = document.getElementById('edit-text-input');
         this.selectedTextDisplay = document.getElementById('selected-text');
@@ -60,7 +60,6 @@ class TextEditor {
     generateTempTabId() {
         return `temp_${Date.now()}`;
     }
-    
 
     bindMethods() {
         this.handleSelection = this.handleSelection.bind(this);
@@ -77,72 +76,18 @@ class TextEditor {
         this.editor.addEventListener('keyup', this.handleKeyboardSelection);
         document.addEventListener('mousedown', this.handleOutsideClick);
         this.modal.addEventListener('mousedown', e => e.stopPropagation());
-        this.input.addEventListener('focus', () => this.isEditingModal = true);
-        this.input.addEventListener('blur', () => this.isEditingModal = false);
+        this.input.addEventListener('focus', () => (this.isEditingModal = true));
+        this.input.addEventListener('blur', () => (this.isEditingModal = false));
     }
 
+    // ---------------- Annotation Handling ----------------
     handleKeyboardSelection(e) {
         if (e.shiftKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
             const selection = window.getSelection();
-            if (selection && selection.toString().length > 0) {
+            if (selection && selection.toString().length) {
                 this.handleSelection();
             }
         }
-    }
-
-    loadAnnotationsForCurrentTab() {
-        if (this.isLoadingAnnotations) return; 
-        
-        try {
-            this.isLoadingAnnotations = true;
-            const tabId = this.editor?.dataset.tabId;
-            if (!tabId) return;
-    
-            this.clearAllAnnotations();
-            const savedAnnotations = localStorage.getItem(`annotations_${tabId}`);
-            if (savedAnnotations) {
-                const annotations = JSON.parse(savedAnnotations);
-                annotations.forEach(ann => this.restoreAnnotation(ann));
-            }
-        } finally {
-            this.isLoadingAnnotations = false;
-        }
-    }
-
-    restoreAnnotation(ann) {
-        const range = this.findRangeForAnnotation(ann.text);
-        if (range) {
-            const annotation = { id: ann.id, text: ann.text, comment: ann.comment, range };
-            this.annotations.set(ann.id, annotation);
-            this.highlightRange(range, ann.id);
-            this.addAnnotationToList(annotation);
-        }
-    }
-
-    findRangeForAnnotation(text) {
-        const range = document.createRange();
-        const walker = document.createTreeWalker(this.editor, NodeFilter.SHOW_TEXT, null, false);
-        while (walker.nextNode()) {
-            const node = walker.currentNode;
-            const idx = node.textContent.indexOf(text);
-            if (idx !== -1) {
-                range.setStart(node, idx);
-                range.setEnd(node, idx + text.length);
-                return range;
-            }
-        }
-        return null;
-    }
-
-    saveAnnotations() {
-        const tabId = this.editor?.dataset.tabId;
-        if (!tabId) return;
-        const annotationsArray = Array.from(this.annotations.values()).map(ann => ({
-            id: ann.id,
-            text: ann.text,
-            comment: ann.comment
-        }));
-        localStorage.setItem(`annotations_${tabId}`, JSON.stringify(annotationsArray));
     }
 
     handleSelection() {
@@ -157,6 +102,16 @@ class TextEditor {
         this.selectedTextDisplay.textContent = `"${selection.toString()}"`;
         this.showModal();
         this.updateModalPosition();
+    }
+
+    isTextAlreadyAnnotated(range) {
+        const selectedNode = range.commonAncestorContainer;
+        const highlightedSpans = this.editor.querySelectorAll('[data-annotation-id]');
+        return Array.from(highlightedSpans).some(span =>
+            span.contains(selectedNode) ||
+            selectedNode.contains(span) ||
+            range.intersectsNode(span)
+        );
     }
 
     async addAnnotation() {
@@ -176,55 +131,33 @@ class TextEditor {
         this.saveAnnotations();
     }
 
-    highlightRange(range, annotationId) {
-        const span = document.createElement('span');
-        span.className = TextEditor.CSS.highlight;
-        span.dataset.annotationId = annotationId;
-        
-        try {
-            range.surroundContents(span);
-            span.addEventListener('mouseenter', () => {
-                const annotation = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
-                if (annotation) {
-                    annotation.classList.add('ring-2', 'ring-blue-400');
-                }
-            });
-            
-            span.addEventListener('mouseleave', () => {
-                const annotation = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
-                if (annotation) {
-                    annotation.classList.remove('ring-2', 'ring-blue-400');
-                }
-            });
-            span.addEventListener('click', () => {
-                const annotation = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
-                if (annotation) {
-                    annotation.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }
-            });
-        } catch (error) {
-            console.error('Failed to highlight range:', error);
+    removeAnnotation(annotationId) {
+        this.removeHighlight(annotationId);
+        this.removeAnnotationElement(annotationId);
+        this.annotations.delete(annotationId);
+        this.saveAnnotations();
+    }
+
+    removeHighlight(annotationId) {
+        const highlightSpan = this.editor.querySelector(`[data-annotation-id="${annotationId}"]`);
+        if (highlightSpan) {
+            const parent = highlightSpan.parentNode;
+            while (highlightSpan.firstChild) {
+                parent.insertBefore(highlightSpan.firstChild, highlightSpan);
+            }
+            highlightSpan.remove();
         }
     }
 
-    renderProcessButton() {
-        const existingButton = this.annotationsList.querySelector('.process-button');
-        if (existingButton) existingButton.remove();
-        const processButton = document.createElement('button');
-        processButton.className = `process-button ${TextEditor.CSS.processButton}`;
-        processButton.innerHTML = this.getProcessButtonContent();
-        processButton.onclick = () => this.processAnnotations();
-        this.annotationsList.appendChild(processButton);
-    }
-
-    setAnnotationBorderColor(annotationId, source) {
-        const annotationElement = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
-        if (annotationElement) {
-            console.log('Source:', source); 
-            const color = source === 'user' ? '#3B82F6' : '#3B82F6'; // green-500 : blue-500
-            annotationElement.style.borderLeftColor = color; 
-            annotationElement.style.borderLeftWidth = '4px'; 
-        }
+    clearAllAnnotations() {
+        const highlights = this.editor.querySelectorAll('[data-annotation-id]');
+        highlights.forEach(hl => {
+            const parent = hl.parentNode;
+            while (hl.firstChild) parent.insertBefore(hl.firstChild, hl);
+            hl.remove();
+        });
+        this.annotationsList.innerHTML = '';
+        this.annotations.clear();
     }
 
     addAnnotationToList(annotation) {
@@ -256,41 +189,106 @@ class TextEditor {
         this.renderProcessButton();
     }
 
-    removeAnnotation(annotationId) {
-        this.removeHighlight(annotationId);
-        this.removeAnnotationElement(annotationId);
-        this.annotations.delete(annotationId);
-        this.saveAnnotations();
-    }
-
-    removeHighlight(annotationId) {
-        const highlightSpan = this.editor.querySelector(`[data-annotation-id="${annotationId}"]`);
-        if (highlightSpan) {
-            const parent = highlightSpan.parentNode;
-            while (highlightSpan.firstChild) {
-                parent.insertBefore(highlightSpan.firstChild, highlightSpan);
-            }
-            highlightSpan.remove();
+    setAnnotationBorderColor(annotationId, source) {
+        const annotationElement = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
+        if (annotationElement) {
+            const color = source === 'user' ? '#3B82F6' : '#3B82F6';
+            annotationElement.style.borderLeftColor = color;
+            annotationElement.style.borderLeftWidth = '4px';
         }
     }
 
-    removeAnnotationElement(annotationId) {
-        const annotationElement = Array.from(this.annotationsList.children)
-            .find(el => el.querySelector(`button[onclick*="${annotationId}"]`));
-        if (annotationElement) annotationElement.remove();
+    highlightRange(range, annotationId) {
+        const span = document.createElement('span');
+        span.className = TextEditor.CSS.highlight;
+        span.dataset.annotationId = annotationId;
+        try {
+            range.surroundContents(span);
+            span.addEventListener('mouseenter', () => {
+                const ann = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
+                if (ann) ann.classList.add('ring-2', 'ring-blue-400');
+            });
+            span.addEventListener('mouseleave', () => {
+                const ann = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
+                if (ann) ann.classList.remove('ring-2', 'ring-blue-400');
+            });
+            span.addEventListener('click', () => {
+                const ann = this.annotationsList.querySelector(`[data-annotation-id="${annotationId}"]`);
+                if (ann) ann.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            });
+        } catch (error) {
+            console.error('Failed to highlight range:', error);
+        }
     }
 
-    clearAllAnnotations() {
-        const highlights = this.editor.querySelectorAll('[data-annotation-id]');
-        highlights.forEach(highlight => {
-            const parent = highlight.parentNode;
-            while (highlight.firstChild) {
-                parent.insertBefore(highlight.firstChild, highlight);
+    // ---------------- Local Data Storage ----------------
+    loadAnnotationsForCurrentTab() {
+        if (this.isLoadingAnnotations) return;
+        try {
+            this.isLoadingAnnotations = true;
+            const tabId = this.editor?.dataset.tabId;
+            if (!tabId) return;
+            this.clearAllAnnotations();
+            const savedAnnotations = localStorage.getItem(`annotations_${tabId}`);
+            if (savedAnnotations) {
+                JSON.parse(savedAnnotations).forEach(ann => this.restoreAnnotation(ann));
             }
-            highlight.remove();
-        });
-        this.annotationsList.innerHTML = '';
-        this.annotations.clear();
+        } finally {
+            this.isLoadingAnnotations = false;
+        }
+    }
+
+    restoreAnnotation(ann) {
+        const range = this.findRangeForAnnotation(ann.text);
+        if (range) {
+            const annotation = { ...ann, range };
+            this.annotations.set(ann.id, annotation);
+            this.highlightRange(range, ann.id);
+            this.addAnnotationToList(annotation);
+        }
+    }
+
+    findRangeForAnnotation(text) {
+        const range = document.createRange();
+        const walker = document.createTreeWalker(this.editor, NodeFilter.SHOW_TEXT, null, false);
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const idx = node.textContent.indexOf(text);
+            if (idx !== -1) {
+                range.setStart(node, idx);
+                range.setEnd(node, idx + text.length);
+                return range;
+            }
+        }
+        return null;
+    }
+
+    saveAnnotations() {
+        const tabId = this.editor?.dataset.tabId;
+        if (!tabId) return;
+        const annArray = Array.from(this.annotations.values()).map(a => ({
+            id: a.id,
+            text: a.text,
+            comment: a.comment
+        }));
+        localStorage.setItem(`annotations_${tabId}`, JSON.stringify(annArray));
+    }
+
+    // ---------------- Modal Management ----------------
+    showModal() {
+        this.modal.classList.remove('hidden');
+    }
+
+    closeModal() {
+        this.modal.classList.add('hidden');
+        this.selectedRange = null;
+        this.input.value = '';
+    }
+
+    handleOutsideClick(e) {
+        if (!this.modal.contains(e.target) && !this.editor.contains(e.target)) {
+            this.closeModal();
+        }
     }
 
     updateModalPosition() {
@@ -302,35 +300,15 @@ class TextEditor {
         this.modal.style.left = `${rect.left + scrollLeft}px`;
     }
 
-    isTextAlreadyAnnotated(range) {
-        const selectedNode = range.commonAncestorContainer;
-        const highlightedSpans = this.editor.querySelectorAll('[data-annotation-id]');
-        return Array.from(highlightedSpans).some(span => 
-            span.contains(selectedNode) || selectedNode.contains(span) || range.intersectsNode(span)
-        );
-    }
-
-    handleOutsideClick(e) {
-        if (!this.modal.contains(e.target) && !this.editor.contains(e.target)) {
-            this.closeModal();
-        }
-    }
-
-    showModal() {
-        this.modal.classList.remove('hidden');
-    }
-
-    closeModal() {
-        this.modal.classList.add('hidden');
-        this.selectedRange = null;
-        this.input.value = '';
-    }
-
-    getTextOffset(node, offset) {
-        const range = document.createRange();
-        range.selectNodeContents(this.editor);
-        range.setEnd(node, offset);
-        return range.toString().length;
+    // ---------------- Processing & API Calls ----------------
+    renderProcessButton() {
+        const existingButton = this.annotationsList.querySelector('.process-button');
+        if (existingButton) existingButton.remove();
+        const processButton = document.createElement('button');
+        processButton.className = `process-button ${TextEditor.CSS.processButton}`;
+        processButton.innerHTML = this.getProcessButtonContent();
+        processButton.onclick = () => this.processAnnotations();
+        this.annotationsList.appendChild(processButton);
     }
 
     async processAnnotations() {
@@ -349,39 +327,29 @@ class TextEditor {
     async callProcessingAPI(retries = 3) {
         const payload = this.prepareAnnotationsPayload();
         const options = this.prepareRequestOptions(payload);
-        
+
         for (let attempt = 0; attempt < retries; attempt++) {
             try {
                 const response = await this.makeRequest(options);
                 console.log(response);
-                
-                // Parse the revised_text JSON string
+
+                // Attempt parsing if revised_text is stringified JSON
                 let revisedTextData;
                 try {
                     revisedTextData = JSON.parse(response.revised_text);
-                } catch (e) {
+                } catch {
                     revisedTextData = response.revised_text;
                 }
-    
-                // Get the actual revised text
+
                 const revised_text = revisedTextData.revised_text || revisedTextData;
-    
-                // Parse the revisions if needed
                 let revisions = response.revisions;
                 if (typeof revisions === 'string') {
                     revisions = JSON.parse(revisions);
                 }
-    
-                // Validate the response format
                 if (!revised_text || !Array.isArray(revisions)) {
                     throw new AnnotationProcessingError('Invalid response format');
                 }
-                
-                return {
-                    revised_text,
-                    revisions
-                };
-    
+                return { revised_text, revisions };
             } catch (error) {
                 if (attempt === retries - 1) throw error;
                 await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
@@ -389,37 +357,8 @@ class TextEditor {
         }
     }
 
-    setProcessingState(isProcessing) {
-        this.isProcessing = isProcessing;
-        this.updateProcessButton();
-    }
-
-    validateResponse({ success, revisions }) {
-        if (!success || !Array.isArray(revisions)) {
-            throw new AnnotationProcessingError('Invalid API response format');
-        }
-        return revisions;
-    }
-
-    handleProcessingError(error) {
-        console.error('Processing failed:', error);
-        this.showWarning(
-            error instanceof AnnotationProcessingError
-                ? error.message
-                : 'Failed to process annotations'
-        );
-    }
-
-    updateProcessButton() {
-        const button = this.annotationsList.querySelector('.process-button');
-        if (!button) return;
-        button.disabled = this.isProcessing;
-        button.innerHTML = this.isProcessing ? this.getLoadingButtonContent() : this.getProcessButtonContent();
-    }
-
     async makeRequest(options) {
         const response = await fetch('/api/annotations/process', options);
-        
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Server error:', {
@@ -427,41 +366,24 @@ class TextEditor {
                 statusText: response.statusText,
                 response: errorText
             });
-    
             if (response.status === 500) {
-                throw new AnnotationProcessingError(
-                    'Server error occurred. Please try again later.',
-                    500
-                );
+                throw new AnnotationProcessingError('Server error occurred. Please try again later.', 500);
             }
-    
-            throw new AnnotationProcessingError(
-                `API request failed (${response.status}): ${response.statusText}`,
-                response.status
-            );
+            throw new AnnotationProcessingError(`API request failed (${response.status}): ${response.statusText}`, response.status);
         }
-    
         const data = await response.json();
         console.log('API Response:', data);
-    
-        // Handle nested revisions structure
+
         if (!data.success) {
             throw new AnnotationProcessingError(data.message || 'Processing failed');
         }
-    
-        // Extract data from nested revisions
         const revisedText = data.revisions.revised_text;
         const revisionsList = data.revisions.revisions;
-    
         if (!revisedText || !Array.isArray(revisionsList)) {
             console.error('Invalid response structure:', data);
             throw new AnnotationProcessingError('Invalid response format');
         }
-    
-        return {
-            revised_text: revisedText,
-            revisions: revisionsList
-        };
+        return { revised_text: revisedText, revisions: revisionsList };
     }
 
     prepareAnnotationsPayload() {
@@ -475,6 +397,22 @@ class TextEditor {
         };
     }
 
+    getTextOffset(node, offset) {
+        // Traverse text nodes to find cumulative text length
+        let totalOffset = 0;
+        const walker = document.createTreeWalker(this.editor, NodeFilter.SHOW_TEXT, null, false);
+    
+        while (walker.nextNode()) {
+            if (walker.currentNode === node) {
+                totalOffset += offset;
+                break;
+            }
+            totalOffset += walker.currentNode.nodeValue.length;
+        }
+    
+        return totalOffset;
+    }
+
     prepareRequestOptions(payload) {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
         if (!csrfToken) throw new AnnotationProcessingError('CSRF token not found');
@@ -482,22 +420,22 @@ class TextEditor {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json',
+                Accept: 'application/json',
                 'X-CSRF-TOKEN': csrfToken
             },
             body: JSON.stringify(payload)
         };
     }
 
+    // ---------------- Processing Feedback ----------------
     displayProcessingResults({ revised_text, revisions }) {
         const existingResults = this.annotationsList.querySelector('.results-container');
         if (existingResults) existingResults.remove();
-        
+
         const resultsContainer = document.createElement('div');
         resultsContainer.className = 'results-container mt-6 space-y-4';
-        
-        // Display all revisions without individual buttons
-        revisions.forEach((revision, index) => {
+
+        revisions.forEach(revision => {
             const resultElement = document.createElement('div');
             resultElement.className = 'p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 border-[#10B981] mb-4';
             resultElement.innerHTML = `
@@ -516,14 +454,13 @@ class TextEditor {
             `;
             resultsContainer.appendChild(resultElement);
         });
-    
-        // Add single apply changes button
+
         const applyButton = document.createElement('button');
         applyButton.style.cssText = `
             width: 100%; 
             margin-top: 1.5rem; 
             padding: 0.75rem 1rem; 
-            background-color: #22c55e; /* Equivalent to bg-green-500 */
+            background-color: #22c55e; 
             color: white; 
             border-radius: 0.5rem; 
             font-weight: 500; 
@@ -533,8 +470,8 @@ class TextEditor {
             gap: 0.5rem; 
             transition: background-color 0.3s ease;
         `;
-        applyButton.onmouseover = () => applyButton.style.backgroundColor = "#16a34a"; // hover:bg-green-600
-        applyButton.onmouseout = () => applyButton.style.backgroundColor = "#22c55e"; // bg-green-500
+        applyButton.onmouseover = () => (applyButton.style.backgroundColor = '#16a34a');
+        applyButton.onmouseout = () => (applyButton.style.backgroundColor = '#22c55e');
         applyButton.innerHTML = `
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
@@ -542,8 +479,7 @@ class TextEditor {
             Apply All Changes
         `;
         applyButton.onclick = () => this.applyRevision(null, revised_text);
-            
-        
+
         resultsContainer.appendChild(applyButton);
         this.annotationsList.appendChild(resultsContainer);
     }
@@ -553,47 +489,28 @@ class TextEditor {
             if (!revisedText || typeof revisedText !== 'string') {
                 throw new Error('Invalid revised text received');
             }
-    
-            // Update editor content with the full revised text
             this.editor.innerHTML = revisedText;
-    
-            // Get all revisions for history
             const results = this.annotationsList.querySelector('.results-container');
             if (!results) throw new Error('No revisions found');
-    
-            // Get explanations directly from the revisions in results container
+
             const explanationElements = Array.from(
                 results.querySelectorAll('.text-gray-600.dark\\:text-gray-400')
             ).filter(el => el.previousElementSibling?.textContent.includes('Explanation:'));
-    
-            const explanations = explanationElements
-                .map(el => el.textContent)
-                .filter(Boolean);
-    
-            // Clean the content before saving
+
+            const explanations = explanationElements.map(el => el.textContent).filter(Boolean);
             const cleanedContent = this.cleanTextContent(revisedText);
-            if (!cleanedContent.trim()) {
-                throw new Error('No valid content to save');
-            }
-    
-            // Save to database with combined explanations
+            if (!cleanedContent.trim()) throw new Error('No valid content to save');
+
             await this.saveTextToDatabase(
                 cleanedContent,
                 explanations.length ? explanations.join('; ') : 'No explanation provided'
             );
-    
-            // Update UI
+
             this.clearUIAfterRevision();
             this.showWarning('Changes applied successfully');
-            
-            // Disable the apply button
             const applyButton = results.querySelector('button');
-            if (applyButton) {
-                this.disableAppliedButton(results);
-            }
-    
+            if (applyButton) this.disableAppliedButton(results);
             await this.loadChangeHistory();
-    
         } catch (error) {
             console.error('Error applying revision:', error);
             this.showWarning(`Failed to apply changes: ${error.message}`);
@@ -601,88 +518,59 @@ class TextEditor {
     }
 
     clearUIAfterRevision() {
-        // Clear revision results
         const resultsContainer = this.annotationsList.querySelector('.results-container');
-        if (resultsContainer) {
-            resultsContainer.remove();
-        }
-    
-        // Clear annotations list content
+        if (resultsContainer) resultsContainer.remove();
         this.annotationsList.innerHTML = '';
-    
-        // Clear annotations
         this.clearAnnotations();
-    
-        // Clear process button
         const processButton = this.annotationsList.querySelector('.process-button');
-        if (processButton) {
-            processButton.remove();
-        }
-    
-        // Reset annotations state
+        if (processButton) processButton.remove();
         this.annotations.clear();
         this.saveAnnotations();
     }
 
     cleanTextContent(html) {
-        // Create a temporary div to handle HTML content
         const temp = document.createElement('div');
         temp.innerHTML = html;
-        
-        // Remove all annotation spans but keep their text content
         const spans = temp.querySelectorAll('[data-annotation-id]');
         spans.forEach(span => {
             const text = span.textContent;
             span.replaceWith(text);
         });
-        
         return temp.textContent;
     }
-    
+
     async saveTextToDatabase(content, explanation = '') {
         try {
-            // Get and validate tab_id
             const tabId = parseInt(this.editor?.dataset?.tabId);
             console.log('Current tab ID:', tabId);
-            
-            if (!tabId || isNaN(tabId)) {
-                throw new Error('Invalid tab ID');
-            }
-    
-            // Get CSRF token
+            if (!tabId || isNaN(tabId)) throw new Error('Invalid tab ID');
+
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-            if (!csrfToken) {
-                throw new Error('CSRF token not found');
-            }
-    
-            // Prepare request body matching database schema
+            if (!csrfToken) throw new Error('CSRF token not found');
+
             const requestBody = {
-                tabId: tabId, // Changed from tab_id to tabId to match controller
-                content: content?.trim() || '', // Changed from text_content to content to match controller
+                tabId,
+                content: content?.trim() || '',
                 explanation: explanation?.trim() || ''
             };
-    
             console.log('Request body:', requestBody);
-    
+
             const response = await fetch('/text/update', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Accept': 'application/json',
+                    Accept: 'application/json',
                     'X-CSRF-TOKEN': csrfToken
                 },
                 body: JSON.stringify(requestBody)
             });
-    
+
             const data = await response.json();
-    
             if (!response.ok) {
                 console.error('Server error:', data);
                 throw new Error(data.message || 'Failed to save text');
             }
-    
             return data;
-    
         } catch (error) {
             console.error('Error saving text to database:', error);
             throw error;
@@ -697,56 +585,17 @@ class TextEditor {
         button.textContent = 'Applied';
     }
 
-    showWarning(message) {
-        const existingWarning = document.querySelector('.warning-message');
-        if (existingWarning) existingWarning.remove();
-        const warning = document.createElement('div');
-        warning.className = 'warning-message fixed top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-red-100 text-red-800 rounded-lg shadow-md z-[9999] opacity-0 transition-opacity duration-300';
-        warning.textContent = message;
-        document.body.appendChild(warning);
-        warning.offsetHeight; // Force reflow
-        warning.style.opacity = '1';
-        setTimeout(() => {
-            warning.style.opacity = '0';
-            warning.addEventListener('transitionend', () => warning.remove());
-        }, 3000);
-    }
-
-    destroy() {
-        this.editor.removeEventListener('mouseup', this.handleSelection);
-        document.removeEventListener('mousedown', this.handleOutsideClick);
-    }
-
-    getProcessButtonContent() {
-        return `
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-            </svg>
-            Start Processing
-        `;
-    }
-
-    getLoadingButtonContent() {
-        return `
-            <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Processing...
-        `;
-    }
-
+    // ---------------- History Management ----------------
     displayHistory() {
         const historySection = document.createElement('div');
         historySection.className = TextEditor.CSS.history;
-        
+
         const title = document.createElement('h3');
         title.className = TextEditor.CSS.historyTitle;
         title.textContent = 'Change History';
         historySection.appendChild(title);
-    
+
         this.annotationsList.appendChild(historySection);
-        
         this.loadChangeHistory();
     }
 
@@ -754,15 +603,13 @@ class TextEditor {
         try {
             const tabId = this.editor?.dataset.tabId;
             if (!tabId) return;
-    
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
             const response = await fetch(`/api/text/history/${tabId}`, {
                 headers: {
-                    'Accept': 'application/json',
+                    Accept: 'application/json',
                     'X-CSRF-TOKEN': csrfToken
                 }
             });
-    
             if (!response.ok) throw new Error('Failed to fetch history');
             const changes = await response.json();
             this.renderHistory(changes);
@@ -773,17 +620,15 @@ class TextEditor {
 
     renderHistory(changes) {
         this.historyContainer.innerHTML = '';
-        
         const title = document.createElement('h3');
         title.className = TextEditor.CSS.historyTitle;
         title.textContent = 'Change History';
         this.historyContainer.appendChild(title);
-    
+
         changes.forEach(change => {
             const changeItem = document.createElement('div');
             changeItem.className = TextEditor.CSS.historyItem;
-            
-            // Format timestamp
+
             const timestamp = new Date(change.created_at).toLocaleString('en-US', {
                 year: 'numeric',
                 month: 'short',
@@ -792,7 +637,7 @@ class TextEditor {
                 minute: '2-digit',
                 hour12: false
             });
-    
+
             changeItem.innerHTML = `
                 <div class="flex items-center mb-4">
                     <span class="${TextEditor.CSS.historyContent}">"${change.original_text}"</span>
@@ -816,8 +661,8 @@ class TextEditor {
         });
     }
 
+    // ---------------- Annotation Cleanup ----------------
     clearAnnotations() {
-        // Clear annotation highlights from editor
         const highlights = this.editor.querySelectorAll('[data-annotation-id]');
         highlights.forEach(highlight => {
             const parent = highlight.parentNode;
@@ -826,25 +671,80 @@ class TextEditor {
             }
             highlight.remove();
         });
-    
-        // Clear annotation list
         const annotationsContainer = this.annotationsList.querySelector('.annotations-container');
-        if (annotationsContainer) {
-            annotationsContainer.innerHTML = '';
-        }
-    
-        // Clear process button
+        if (annotationsContainer) annotationsContainer.innerHTML = '';
         const processButton = this.annotationsList.querySelector('.process-button');
-        if (processButton) {
-            processButton.remove();
-        }
-    
-        // Clear annotations map
+        if (processButton) processButton.remove();
         this.annotations.clear();
         this.saveAnnotations();
     }
-    
-    
+
+    // ---------------- UI Helpers & Teardown ----------------
+    setProcessingState(isProcessing) {
+        this.isProcessing = isProcessing;
+        this.updateProcessButton();
+    }
+
+    updateProcessButton() {
+        const button = this.annotationsList.querySelector('.process-button');
+        if (!button) return;
+        button.disabled = this.isProcessing;
+        button.innerHTML = this.isProcessing ? this.getLoadingButtonContent() : this.getProcessButtonContent();
+    }
+
+    getProcessButtonContent() {
+        return `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            Start Processing
+        `;
+    }
+
+    getLoadingButtonContent() {
+        return `
+            <svg class="w-5 h-5 animate-spin" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" 
+                    stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" 
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 
+                    7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                </path>
+            </svg>
+            Processing...
+        `;
+    }
+
+    showWarning(message) {
+        const existingWarning = document.querySelector('.warning-message');
+        if (existingWarning) existingWarning.remove();
+
+        const warning = document.createElement('div');
+        warning.className = 'warning-message fixed top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 bg-red-100 text-red-800 rounded-lg shadow-md z-[9999] opacity-0 transition-opacity duration-300';
+        warning.textContent = message;
+        document.body.appendChild(warning);
+        warning.offsetHeight; // force reflow
+        warning.style.opacity = '1';
+
+        setTimeout(() => {
+            warning.style.opacity = '0';
+            warning.addEventListener('transitionend', () => warning.remove());
+        }, 3000);
+    }
+
+    handleProcessingError(error) {
+        console.error('Processing failed:', error);
+        this.showWarning(
+            error instanceof AnnotationProcessingError
+                ? error.message
+                : 'Failed to process annotations'
+        );
+    }
+
+    destroy() {
+        this.editor.removeEventListener('mouseup', this.handleSelection);
+        document.removeEventListener('mousedown', this.handleOutsideClick);
+    }
 }
 
 export default TextEditor;
