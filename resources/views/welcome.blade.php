@@ -20,10 +20,7 @@
         @endif
     </head>
     <body class="min-h-screen bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
-
                     <header class="grid grid-cols-2 items-center gap-2 py-10 lg:grid-cols-2">
-                        <div class="flex lg:justify-center lg:col-start-2">
-                        </div>
                         @if (Route::has('login'))
                             <nav class="-mx-3 flex flex-1 justify-end">
                                 @auth
