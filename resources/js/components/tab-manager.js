@@ -52,7 +52,8 @@ export default class TabManager {
     // Tab Operations
     async createNewTab() {
         try {
-            const data = await this.makeRequest('/tabs', 'POST', { name: 'New Tab' });
+            
+            const data = await this.makeRequest('/tabs', 'POST', { name: 'Tab' });
             await this.handleTabCreation(data.tab);
         } catch (error) {
             this.handleError(error, 'Failed to create tab');

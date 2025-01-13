@@ -10,9 +10,12 @@ class TabController extends Controller
 {
     public function store()
     {
+        $userTabCount = Tab::where('user_id', auth()->id())->count();
+        $newTabNumber = $userTabCount + 1;
+        
         $tab = Tab::create([
             'user_id' => auth()->id(),
-            'name' => 'New Tab'
+            'name' => "Tab #$newTabNumber"
         ]);
 
         return response()->json(['success' => true, 'tab' => $tab]);

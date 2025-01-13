@@ -54,7 +54,7 @@
                         Login
                     </a>
                     <a href="{{ route('register') }}" 
-                       class="text-gray-700 dark:text-gray-300 px-8 py-3 rounded-lg border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                       class="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors">
                         Register
                     </a>
                 </div>
