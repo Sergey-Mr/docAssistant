@@ -74,8 +74,24 @@ Your project should now be available at `http://localhost:8000` (by default).
 
 ## Architecture Decisions
 
+### Prompt Engineering
+The application uses GPT-4 with a specific prompt designed to handle text revisions. The prompt was derived emprically. 
+The model receives the following data:
+- Context: the whole text of the user.
+- Annotations: the portions of text selected by the user and user`s instructions.
+  
+The model is instructed to act as a text revision assistant and performs the following tasks:
+- Revise specific annotated text portions while keeping the rest intact.
+- Ensure revisions blend seamlessly with the original text.
+- Return a JSON response containing:
+      1. The full revised text.
+      2. Original and revised sections.
+      3. Explanations for each change.
+
+**Please find more details on prompt implementations: /app/Services/ChatGPTService.php.**
+
 ### Backend
-- **Framework**: Laravel, chosen for its robust ecosystem and elegant syntax.
+- **Framework**: Laravel.
 - **Database Structure**:
   - `tabs`: Manages multiple document contexts.
   - `text_changes`: Records version history with explanations.
