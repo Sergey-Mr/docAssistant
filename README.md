@@ -87,7 +87,7 @@ The model is instructed to act as a text revision assistant and performs the fol
   2. Original and revised sections.
   3. Explanations for each change.
 
-**Please find more details on prompt implementations: /app/Services/ChatGPTService.php.**
+**Please find more details on prompt implementations: [ChatGPT Service Implementation](/app/Services/ChatGPTService.php)**
 
 ### Backend
 - **Framework**: Laravel.
