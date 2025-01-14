@@ -83,9 +83,9 @@ The model is instructed to act as a text revision assistant and performs the fol
 - Revise specific annotated text portions while keeping the rest intact.
 - Ensure revisions blend seamlessly with the original text.
 - Return a JSON response containing:
-      1. The full revised text.
-      2. Original and revised sections.
-      3. Explanations for each change.
+  1. The full revised text.
+  2. Original and revised sections.
+  3. Explanations for each change.
 
 **Please find more details on prompt implementations: /app/Services/ChatGPTService.php.**
 
