@@ -78,6 +78,8 @@ The application uses GPT-4 with a specific prompt designed to handle text revisi
 The model receives the following data:
 - Context: the whole text of the user.
 - Annotations: the portions of text selected by the user and user`s instructions.
+
+**Temperature = 0.7** was derived emperically and proved to be the most suitable level for the purpouse of the web application.
   
 The model is instructed to act as a text revision assistant and performs the following tasks:
 - Revise specific annotated text portions while keeping the rest intact.
