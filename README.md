@@ -42,7 +42,6 @@ npm install
         DB_USERNAME={username}
         DB_PASSWORD={password}
         
-        ```env
         DB_CONNECTION=sqlite
         DB_DATABASE=/absolute/path/to/your/database.sqlite
         ```
