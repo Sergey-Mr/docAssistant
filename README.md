@@ -19,7 +19,40 @@ A web application for revising and improving text using AI assistance, with mult
 - **SQLite** (or your preferred database)
 - **OpenAI API Key**
 
-## Setup Instructions
+## Docekr Deployment Instruction
+
+### 1. Build and run Docker containers
+```bash
+docker-compose up --build -d
+```
+### 2. Create the database
+```bash
+sudo docker-compose exec db bash
+mysql -u root -p
+CREATE DATABASE docassistant;
+```
+
+### 3. Run migrations
+```bash
+sudo docker-compose exec app bash
+php artisan migrate
+```
+
+### 4. Install dependencies
+```bash 
+php artisan key:generate
+docker-compose exec --user root app bash
+rm -rf /var/www/docAssistant/node_modules
+npm cache clean --force
+chown -R www-data:www-data /var/www/.npm
+npm install
+npm run build
+```
+
+### 5. Access the application
+Open your web browser and navigate to http://localhost:8090 or the port specified in your docker-compose.yml
+
+## Manual Instructions
 
 ### 1. Clone and Install Dependencies
 ```bash
