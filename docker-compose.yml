@@ -20,7 +20,7 @@ services:
       - DB_CONNECTION=mysql
       - DB_HOST=db
       - DB_PORT=3306
-      - DB_DATABASE=laravel
+      - DB_DATABASE=docassistant
       - DB_USERNAME=root
       - DB_PASSWORD=root
     ports:
@@ -33,12 +33,25 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: laravel
-      MYSQL_USER: root
-      MYSQL_PASSWORD: root
     volumes:
       - dbdata:/var/lib/mysql
     networks:
       - app-network
+
+  web:
+    image: nginx:alpine
+    container_name: doc-assistant-web
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      - .:/var/www/docAssistant
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+    networks:
+      - app-network
+    depends_on:
+      - app
+
 
 networks:
   app-network:

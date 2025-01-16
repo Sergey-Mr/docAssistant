@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('tabs', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained('users');
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->string('name');
             $table->timestamps();
         });
@@ -40,8 +40,8 @@ return new class extends Migration
 
     public function down(): void
     {
+        Schema::dropIfExists('text_changes');
         Schema::dropIfExists('user_texts');
         Schema::dropIfExists('tabs');
-        Schema::dropIfExists('text_changes');
     }
 };
